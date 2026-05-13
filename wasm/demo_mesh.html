@@ -1304,8 +1304,8 @@ function drawHybrid(pts3d, matchFlag) {
     const len = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
     if (len > maxEdge) return;
     const zNorm = 0.5 * (pa[2] + pb[2]);                  // 0..1, forward=1
-    const alpha = baseAlpha * 0.65 * (0.15 + 0.85 * zNorm);
-    ctx.lineWidth = 0.18 + 0.42 * zNorm;     // thicker for visibility
+    const alpha = baseAlpha * 0.55 * (0.15 + 0.85 * zNorm);
+    ctx.lineWidth = 0.10 + 0.25 * zNorm;
     // Depth-tinted: forward = white (or ID tint), far = light green.
     const warm = zNorm;
     const cool = 1 - zNorm;
