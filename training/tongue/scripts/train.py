@@ -47,14 +47,10 @@ def main():
     model = TongueNet().to(device)
     print(f"params: {model.num_params():,}")
 
-    # Class-balanced loss: positives are rare
-    n_pos = sum(1 for _, l in [(None, full._lbl[i] if full._lbl is not None else 0) for i in range(min(100, n))])
-    # Reload meta for true ratio
-    import json
-    meta = json.loads((Path("D:/apps/facex/training/data/tongue") / "meta.json").read_text())
-    pos_w = meta["n_neg"] / max(1, meta["n_pos"])
-    print(f"positive class weight: {pos_w:.2f}")
-    class_weights = torch.tensor([1.0, pos_w], device=device)
+    # Plain cross-entropy (no class weights) — earlier 4.6x positive weight
+    # made the model over-fire on every face. With ~1:4.6 ratio CE alone
+    # converges fine and gives much cleaner probabilities.
+    class_weights = None
 
     decay, no_decay = [], []
     for n_, p in model.named_parameters():
@@ -78,7 +74,7 @@ def main():
             opt.zero_grad(set_to_none=True)
             with torch.amp.autocast("cuda", dtype=torch.bfloat16):
                 logits = model(imgs)
-                loss = F.cross_entropy(logits, lbl, weight=class_weights)
+                loss = F.cross_entropy(logits, lbl, weight=class_weights) if class_weights is not None else F.cross_entropy(logits, lbl)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             opt.step()

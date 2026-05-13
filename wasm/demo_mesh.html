@@ -583,28 +583,31 @@ function updateLiveness(pts98) {
   if (elapsed > LIVENESS_TIMEOUT_MS) {
     liveness.step = 'done'; liveness.failed = true; return;
   }
-  // Anchor measurements: nose tip ~ pt 54; face contour width = 0..32.
   const nose = pts98[54];
-  const left = pts98[0], right = pts98[32];
   const top = pts98[33], chin = pts98[16];
-  const faceW = Math.hypot(right[0] - left[0], right[1] - left[1]);
-  const faceH = Math.hypot(chin[0] - top[0], chin[1] - top[1]);
-  const faceCx = 0.5 * (left[0] + right[0]);
-  const faceCy = 0.5 * (top[1] + chin[1]);
+  const faceH = Math.max(1, Math.hypot(chin[0] - top[0], chin[1] - top[1]));
 
+  // Anchor on first call: store nose pixel position + face height.
   if (liveness.basePts == null) {
-    liveness.basePts = { nx: (nose[0] - faceCx) / faceW, ny: (nose[1] - faceCy) / faceH };
+    liveness.basePts = { x: nose[0], y: nose[1], h: faceH };
+    liveness.maxDx = 0; liveness.maxDy = 0;
+    return;
   }
-  const cur = { nx: (nose[0] - faceCx) / faceW, ny: (nose[1] - faceCy) / faceH };
-  const dx = cur.nx - liveness.basePts.nx;
-  const dy = cur.ny - liveness.basePts.ny;
+  // Normalize raw pixel delta by face height (yaw-stable scale).
+  const dx = (nose[0] - liveness.basePts.x) / liveness.basePts.h;
+  const dy = (nose[1] - liveness.basePts.y) / liveness.basePts.h;
+  liveness.lastDx = dx; liveness.lastDy = dy;
+  if (Math.abs(dx) > Math.abs(liveness.maxDx)) liveness.maxDx = dx;
+  if (Math.abs(dy) > Math.abs(liveness.maxDy)) liveness.maxDy = dy;
 
+  // Threshold: nose tip needs to travel ~7% of face height. Mirror-aware:
+  // video is displayed flipped (scaleX(-1)), so to align arrow direction
+  // with the user's perceived movement we accept EITHER sign for LEFT/RIGHT.
+  const TH = 0.07;
   let pass = false;
-  // Note: overlay is mirrored (video transform scaleX(-1)) so user moving
-  // physically left appears moving right in the unmirrored coord system.
-  if (liveness.instruction === 'LEFT' && dx >  0.10) pass = true;
-  if (liveness.instruction === 'RIGHT' && dx < -0.10) pass = true;
-  if (liveness.instruction === 'UP' && dy < -0.10) pass = true;
+  if (liveness.instruction === 'LEFT'  && Math.abs(liveness.maxDx) > TH) pass = true;
+  if (liveness.instruction === 'RIGHT' && Math.abs(liveness.maxDx) > TH) pass = true;
+  if (liveness.instruction === 'UP'    && liveness.maxDy < -TH) pass = true;
   if (liveness.instruction === 'BLINK' && blinkCount - liveness.baseBlinks >= 2) pass = true;
   if (pass) { liveness.step = 'done'; liveness.passed = true; }
 }
@@ -620,15 +623,28 @@ function drawLivenessOverlay(w, h) {
   if (liveness.step === 'running') {
     const elapsed = (performance.now() - liveness.startedAt) / 1000;
     const remaining = Math.max(0, LIVENESS_TIMEOUT_MS/1000 - elapsed);
-    const arrow = { LEFT: '←', RIGHT: '→', UP: '↑', BLINK: '👁 BLINK TWICE' }[liveness.instruction];
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(0, 0, w, 110);
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 56px sans-serif';
+    const label = {
+      LEFT: 'TURN YOUR HEAD LEFT',
+      RIGHT: 'TURN YOUR HEAD RIGHT',
+      UP: 'LOOK UP',
+      BLINK: '👁 BLINK TWICE',
+    }[liveness.instruction];
+    ctx.fillStyle = 'rgba(0,0,0,0.50)';
+    ctx.fillRect(0, 0, w, 120);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(`${arrow}`, w/2, 55);
-    ctx.font = 'bold 14px monospace';
+    ctx.fillText(label, w/2, 38);
+    ctx.font = 'bold 13px monospace';
     ctx.fillStyle = '#10b981';
-    ctx.fillText(`${remaining.toFixed(1)}s`, w/2, 92);
+    ctx.fillText(`${remaining.toFixed(1)}s remaining`, w/2, 70);
+    // Live progress bar based on captured nose deviation
+    const target = 0.07;
+    const cur = Math.max(Math.abs(liveness.maxDx || 0), Math.abs(liveness.maxDy || 0));
+    const frac = Math.min(1, cur / target);
+    ctx.fillStyle = '#1f2937';
+    ctx.fillRect(w*0.20, 92, w*0.60, 10);
+    ctx.fillStyle = '#10b981';
+    ctx.fillRect(w*0.20, 92, w*0.60 * frac, 10);
     return;
   }
   if (liveness.step === 'done') {
