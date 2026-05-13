@@ -510,6 +510,28 @@ function drawSpoofOverlay(w, h) {
   ctx.restore();
 }
 
+// Mesh sanity check: if too many mesh points have escaped well outside the
+// face bbox, the landmark prediction is broken (occlusion, partial face,
+// detector hiccup) — skip rendering so we don't draw garbage all over the
+// frame. 15% of bbox is the tolerated slack.
+function isMeshSane(pts, bbox2d, maxOutliers = 6, slack = 0.15) {
+  if (!pts || pts.length === 0 || !bbox2d) return true;
+  const [x1, y1, x2, y2] = bbox2d;
+  const w = x2 - x1, h = y2 - y1;
+  if (w <= 0 || h <= 0) return true;
+  const mx = w * slack, my = h * slack;
+  const lx = x1 - mx, hx = x2 + mx;
+  const ly = y1 - my, hy = y2 + my;
+  let out = 0;
+  for (const p of pts) {
+    const x = p[0], y = p[1];
+    if (x < lx || x > hx || y < ly || y > hy) {
+      if (++out > maxOutliers) return false;
+    }
+  }
+  return true;
+}
+
 // Cosine similarity between two normalized vectors
 function cosSim(a, b) {
   let s = 0;
@@ -1780,12 +1802,17 @@ async function tick() {
   } else if (mode === 'detect' || mode === 'faceid') {
     // nothing else — bbox already drawn above
   } else if (mode === 'hybrid' && lastHybrid.length) {
-    for (let i = 0; i < lastHybrid.length; i++) drawHybrid(lastHybrid[i], lastFaceMatch[i]);
+    for (let i = 0; i < lastHybrid.length; i++) {
+      if (isMeshSane(lastHybrid[i], bbox2ds[i])) drawHybrid(lastHybrid[i], lastFaceMatch[i]);
+    }
   } else if (mode === 'true3d' && last3D.length) {
-    for (let i = 0; i < last3D.length; i++) drawTrue3D(last3D[i], lastFaceMatch[i]);
+    for (let i = 0; i < last3D.length; i++) {
+      if (isMeshSane(last3D[i], bbox2ds[i])) drawTrue3D(last3D[i], lastFaceMatch[i]);
+    }
   } else {
     for (let i = 0; i < lastAllPts2d.length; i++) {
-      drawMesh(lastAllPts2d[i], bbox2ds[i], lastFaceMatch[i]);
+      if (isMeshSane(lastAllPts2d[i], bbox2ds[i]))
+        drawMesh(lastAllPts2d[i], bbox2ds[i], lastFaceMatch[i]);
     }
   }
 
