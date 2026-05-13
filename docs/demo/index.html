@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FaceX — 98-point face mesh (ONNX)</title>
+<title>FaceX — 478-point face mesh (in-browser, encrypted)</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#0a0a0a; color:#e0e0e0; }
@@ -51,8 +51,8 @@
 <body>
 
 <div class="wrap">
-  <h1>Face<span>X</span> — 98-point mesh</h1>
-  <p class="sub">YuNet ONNX (detection) → custom WFLW landmark ONNX (98 points) → wireframe. Pure onnxruntime-web, no SIMD required.</p>
+  <h1>Face<span>X</span> — 478-point face mesh</h1>
+  <p class="sub">All-WASM pipeline: <strong>our</strong> face detector → 98-point WFLW landmarks → 478-point 3D mesh (MediaPipe distillation) → recognition → MiniFASNet anti-spoof. Models are <strong>AES-256-GCM encrypted</strong>, decrypted in-browser; nothing leaves your device.</p>
 
   <div id="status" class="status loading">Loading…</div>
 
@@ -81,8 +81,8 @@
   </div>
 
   <div class="info">
-    <p><strong>Pipeline.</strong> Every frame: YuNet ONNX finds a face → crop+resize to 112×112 → 1.15M-param landmark ConvNet predicts 98 (x,y) points → wireframe drawn on overlay canvas.</p>
-    <p><strong>All custom.</strong> Both models trained from scratch (face detector by FaceX, landmarks by us on WFLW). Apache 2.0.</p>
+    <p><strong>Pipeline.</strong> Every frame: <em>our</em> face detector (FCOS-style, 100K params, trained from scratch on WIDER FACE) → 98-point WFLW landmark ConvNet → 478-point 3D mesh distilled from MediaPipe → 512-dim embedding (MobileFaceNet + ArcFace on MS1M, LFW 96.9%) → MiniFASNet anti-spoof ensemble.</p>
+    <p><strong>All custom (except antispoof).</strong> Detector, landmarks, 3D mesh, recognition — trained from scratch. Only anti-spoof uses MinivisionAI's MiniFASNet under Apache 2.0. Every weight is AES-256-GCM encrypted on disk and decrypted in-browser via WebCrypto.</p>
   </div>
 </div>
 
