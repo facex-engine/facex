@@ -21,7 +21,7 @@
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ Pipeline: detect → 98pt landmarks → 478pt 3D mesh         │
+│ Pipeline: detect → 98pt landmarks → 576pt 3D mesh         │
 │           → recognition (FaceX nano/tiny) → MiniFASNet     │
 │                                                            │
 │ Every component runs in WebAssembly.                       │
@@ -35,7 +35,7 @@
 |---|---|---|---|
 | Face detector | ✅ **ours** | 401 KB | YuNet-style FCOS, WIDER FACE |
 | 98-point landmark | ✅ **ours** | 1.1 MB | WFLW |
-| 478-point 3D landmark | ✅ **ours** | 5.6 MB | MediaPipe distillation |
+| 576-point 3D mesh | ✅ **ours** | 5.6 MB | MediaPipe distillation |
 | Recognition (4 sizes) | ✅ **ours** | 0.8–8.4 MB | MobileFaceNet + ArcFace on MS1M, LFW 95.6 → 99.1% |
 | Anti-spoof | Apache 2.0 | 2 × 1.7 MB | MiniFASNet (MinivisionAI Silent-Face) |
 
@@ -98,8 +98,8 @@ Full pipeline, every step trained or written by us:
 1. **Detect** — own FCOS-style face detector (100K params, trained from
    scratch on WIDER FACE; 401 KB ONNX).
 2. **Align** — 98-point WFLW landmark ConvNet (1.15M params; 1.1 MB ONNX).
-3. **3D mesh** — 478-point face mesh distilled from MediaPipe FaceMesh
-   (5.6 MB ONNX). With 98 driving anchors, **576 points** total.
+3. **3D mesh** — 576-point face mesh (5.6 MB ONNX), distilled from
+   MediaPipe FaceMesh with our 98 WFLW anchors driving the warp.
 4. **Recognize** — MobileFaceNet + ArcFace, four size variants
    (`nano` 0.8 MB · `tiny` 1.8 MB · `standard` 3.9 MB · `xs` 8.4 MB),
    LFW 95.6 → 99.07%.
@@ -246,7 +246,7 @@ sim := facex.CosSim(embA, embB)
 </script>
 ```
 
-Full browser pipeline (detect + 98pt + 478pt + recognize + anti-spoof)
+Full browser pipeline (detect + 576pt mesh + recognize + anti-spoof)
 is **live at https://facex-engine.github.io/facex/demo/** — open it,
 press *Start camera*, try the picker.
 
@@ -410,12 +410,13 @@ loss. 100 K params, 401 KB ONNX. Trained on WIDER FACE.
 MobileFaceNet-style backbone + dense head, 1.15 M params. Final NME
 on WFLW val: 4.85% (test) / 5.95% (large-pose subset).
 
-### 478-point 3D mesh (ours, MediaPipe distillation)
+### 576-point 3D mesh (ours, MediaPipe distillation)
 
 Same architecture as the 98-point model, but with `Linear(256, 478*3)`
-head. Trained on MediaPipe FaceMesh pseudo-labels with TPS-rendered
+head — distilled from MediaPipe FaceMesh pseudo-labels with TPS-rendered
 supervision over our WFLW frontalised crops. Error: xy 0.54 px, z 0.51
-(normalized) on held-out val.
+(normalized) on held-out val. With 98 WFLW anchors driving the
+non-rigid warp, the rendered mesh has **576 visible points** total.
 
 ### Anti-spoof (MiniFASNet, Apache 2.0, MinivisionAI)
 
@@ -442,7 +443,7 @@ docs/demo/              — GitHub Pages live demo + encrypted weights
 training/               — all training pipelines, datasets, exporters
    scripts/             — MobileFaceNet recognition (nano/tiny/standard/xs)
    landmark/            — 98-point WFLW
-   landmark3d/          — 478-point MediaPipe distillation
+   landmark3d/          — 576-point MediaPipe distillation
    face_detect/         — own YuNet-style face detector on WIDER FACE
    antispoof/           — MiniFASNet integration + own synth experiments
 go/facex/               — Go binding (subprocess protocol)
