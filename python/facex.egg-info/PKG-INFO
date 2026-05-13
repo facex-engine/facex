@@ -1,0 +1,115 @@
+Metadata-Version: 2.4
+Name: facex
+Version: 0.1.0
+Summary: Python binding for FaceX face detection + recognition
+Author: Baurzhan Atinov
+License: Apache-2.0
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.20
+Provides-Extra: image
+Requires-Dist: Pillow>=8.0; extra == "image"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: Pillow>=8.0; extra == "dev"
+
+# FaceX Python
+
+Python binding for the [FaceX](https://github.com/facex-engine/facex) face detection + recognition library.
+
+## Install
+
+```bash
+cd python/
+pip install -e .
+
+# With Pillow for image loading:
+pip install -e ".[image]"
+```
+
+## Quick start
+
+```python
+import numpy as np
+from facex import FaceX
+
+# Initialize (auto-finds library and weights)
+fx = FaceX()
+
+# Load an image as RGB uint8 numpy array (H, W, 3)
+from PIL import Image
+image = np.array(Image.open("photo.jpg").convert("RGB"))
+
+# Detect faces — returns list of dicts
+faces = fx.detect(image)
+for face in faces:
+    print(f"bbox: {face['bbox']}, score: {face['score']:.3f}")
+    print(f"keypoints: {face['keypoints']}")
+    # face['embedding'] is a 512-dim numpy float32 vector
+
+# Compare two faces
+if len(faces) >= 2:
+    sim = FaceX.similarity(faces[0]["embedding"], faces[1]["embedding"])
+    print(f"Similarity: {sim:.3f}  ({'same' if sim > 0.3 else 'different'} person)")
+```
+
+## Configuration
+
+### Auto-detection
+
+FaceX looks for the native library and weights relative to the package location
+(expects `../../weights/` and `../../libfacex.so` or `../../facex.dll`).
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `FACEX_LIB` | Path to shared library (`.dll` / `.so` / `.dylib`) |
+| `FACEX_CLI` | Path to `facex-cli` binary (subprocess fallback) |
+| `FACEX_ROOT` | Root of FaceX project (alternative search path) |
+| `FACEX_EMBED_WEIGHTS` | Path to embedding model weights |
+| `FACEX_DETECT_WEIGHTS` | Path to detector weights |
+
+### Explicit paths
+
+```python
+fx = FaceX(
+    lib_path="/path/to/libfacex.so",
+    embed_weights="/path/to/embed.bin",
+    detect_weights="/path/to/detect.bin",
+    score_threshold=0.5,
+    nms_threshold=0.4,
+    max_faces=20,
+)
+```
+
+## API reference
+
+### `FaceX()`
+
+Main class. Uses ctypes (shared library) if available, falls back to subprocess (CLI).
+
+- **`detect(image, max_faces=None)`** -- Detect faces in an RGB uint8 image. Returns list of dicts with `bbox`, `score`, `keypoints`, `embedding`.
+- **`embed(face_112x112)`** -- Compute embedding for a pre-aligned 112x112 face (ctypes only). Input: float32 HWC in [-1, 1]. Returns 512-dim float32 array.
+- **`similarity(emb1, emb2)`** -- Static method. Cosine similarity between two 512-dim embeddings. Returns float in [-1, 1].
+- **`close()`** -- Free native resources. Also works as context manager (`with FaceX() as fx: ...`).
+- **`backend`** -- Property: `"ctypes"`, `"cli"`, or `"none"`.
+
+### `similarity(emb1, emb2)`
+
+Module-level function, same as `FaceX.similarity()`. Works without initializing FaceX.
+
+```python
+from facex import similarity
+sim = similarity(emb1, emb2)
+```
+
+## Backends
+
+| Backend | Requires | Detection | Embedding (standalone) |
+|---|---|---|---|
+| ctypes | `libfacex.so` / `facex.dll` | Yes | Yes |
+| cli | `facex-cli` binary | Yes | No (use detect) |
+| none | nothing | No | No |
+
+Similarity always works (pure numpy).

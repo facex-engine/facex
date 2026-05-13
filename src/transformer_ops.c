@@ -534,13 +534,11 @@ void matmul_fp32(const float* A, const float* B, float* C,
  * Each panel of 8 columns is stored contiguously along K dimension.
  * This gives sequential 32-byte (1 cache line) loads in the inner K loop. */
 void pack_b_fp32(const float* B, int K, int N, float* packed) {
-#if defined(__AVX512F__)
+#ifdef __AVX512F__
     int NR = 16;
-#elif defined(__AVX2__)
+#else
     int NR = 8;
 #endif
-
-#if defined(__AVX2__) || defined(__AVX512F__)
     int n_panels = (N + NR - 1) / NR;
     for (int p = 0; p < n_panels; p++) {
         int n_start = p * NR;
@@ -553,19 +551,13 @@ void pack_b_fp32(const float* B, int K, int N, float* packed) {
             for (; j < NR; j++) dst[k * NR + j] = 0; /* zero-pad last panel */
         }
     }
-#else
-    /* Scalar: just copy — matmul_fp32 expects standard [K,N] layout */
-    memcpy(packed, B, (size_t)K * N * sizeof(float));
-#endif
 }
 
 int packed_b_fp32_size(int K, int N) {
 #ifdef __AVX512F__
     return ((N + 15) / 16) * K * 16;
-#elif defined(__AVX2__)
-    return ((N + 7) / 8) * K * 8;
 #else
-    return K * N;
+    return ((N + 7) / 8) * K * 8;
 #endif
 }
 

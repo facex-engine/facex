@@ -1,0 +1,740 @@
+
+=== run: ep=80 batch=32 lr=0.001 ===
+  ep 1 it 50/402  loss 2.661  cls 1.161  box 1.000  kps 0.000  npos 1356  46 img/s  lr 1.00e-04
+  ep 1 it 100/402  loss 2.585  cls 1.085  box 1.000  kps 0.000  npos 1357  69 img/s  lr 2.00e-04
+  ep 1 it 150/402  loss 2.433  cls 0.948  box 0.990  kps 0.000  npos 1359  82 img/s  lr 3.00e-04
+  ep 1 it 200/402  loss 2.269  cls 0.837  box 0.954  kps 0.000  npos 1358  91 img/s  lr 4.00e-04
+  ep 1 it 250/402  loss 2.137  cls 0.760  box 0.918  kps 0.000  npos 1368  97 img/s  lr 5.00e-04
+  ep 1 it 300/402  loss 2.032  cls 0.702  box 0.886  kps 0.000  npos 1372  102 img/s  lr 6.00e-04
+  ep 1 it 350/402  loss 1.942  cls 0.657  box 0.857  kps 0.000  npos 1373  105 img/s  lr 7.00e-04
+  ep 1 it 400/402  loss 1.867  cls 0.620  box 0.831  kps 0.000  npos 1369  108 img/s  lr 8.00e-04
+ep 1/80  recall@0.5 0.002  prec 0.226  npred 243  ngt 22897  time 2.8min  lr 8.04e-04
+  -> new best recall 0.0024
+  ep 2 it 50/402  loss 1.266  cls 0.353  box 0.608  kps 0.000  npos 1386  115 img/s  lr 9.04e-04
+  ep 2 it 100/402  loss 1.217  cls 0.340  box 0.584  kps 0.000  npos 1373  118 img/s  lr 1.00e-03
+  ep 2 it 150/402  loss 1.194  cls 0.337  box 0.571  kps 0.000  npos 1366  120 img/s  lr 1.00e-03
+  ep 2 it 200/402  loss 1.174  cls 0.333  box 0.561  kps 0.000  npos 1359  120 img/s  lr 1.00e-03
+  ep 2 it 250/402  loss 1.161  cls 0.330  box 0.555  kps 0.000  npos 1361  121 img/s  lr 1.00e-03
+  ep 2 it 300/402  loss 1.148  cls 0.326  box 0.548  kps 0.000  npos 1362  120 img/s  lr 1.00e-03
+  ep 2 it 350/402  loss 1.133  cls 0.322  box 0.540  kps 0.000  npos 1363  121 img/s  lr 1.00e-03
+  ep 2 it 400/402  loss 1.122  cls 0.319  box 0.535  kps 0.000  npos 1366  121 img/s  lr 1.00e-03
+ep 2/80  recall@0.5 0.077  prec 0.695  npred 2552  ngt 22897  time 2.1min  lr 1.00e-03
+  -> new best recall 0.0774
+  ep 3 it 50/402  loss 1.014  cls 0.287  box 0.484  kps 0.000  npos 1356  112 img/s  lr 1.00e-03
+  ep 3 it 100/402  loss 1.008  cls 0.283  box 0.483  kps 0.000  npos 1372  116 img/s  lr 1.00e-03
+  ep 3 it 150/402  loss 1.007  cls 0.284  box 0.482  kps 0.000  npos 1361  118 img/s  lr 9.99e-04
+  ep 3 it 200/402  loss 1.001  cls 0.282  box 0.479  kps 0.000  npos 1361  119 img/s  lr 9.99e-04
+  ep 3 it 250/402  loss 0.997  cls 0.281  box 0.477  kps 0.000  npos 1356  124 img/s  lr 9.99e-04
+  ep 3 it 300/402  loss 0.992  cls 0.280  box 0.475  kps 0.000  npos 1357  128 img/s  lr 9.99e-04
+  ep 3 it 350/402  loss 0.988  cls 0.278  box 0.473  kps 0.000  npos 1366  131 img/s  lr 9.99e-04
+  ep 3 it 400/402  loss 0.984  cls 0.277  box 0.471  kps 0.000  npos 1367  133 img/s  lr 9.99e-04
+ep 3/80  recall@0.5 0.091  prec 0.821  npred 2549  ngt 22897  time 1.9min  lr 9.99e-04
+  -> new best recall 0.0914
+  ep 4 it 50/402  loss 0.948  cls 0.271  box 0.451  kps 0.000  npos 1315  144 img/s  lr 9.99e-04
+  ep 4 it 100/402  loss 0.946  cls 0.270  box 0.450  kps 0.000  npos 1333  151 img/s  lr 9.98e-04
+  ep 4 it 150/402  loss 0.936  cls 0.265  box 0.448  kps 0.000  npos 1342  152 img/s  lr 9.98e-04
+  ep 4 it 200/402  loss 0.936  cls 0.264  box 0.448  kps 0.000  npos 1354  152 img/s  lr 9.98e-04
+  ep 4 it 250/402  loss 0.937  cls 0.263  box 0.449  kps 0.000  npos 1364  152 img/s  lr 9.98e-04
+  ep 4 it 300/402  loss 0.933  cls 0.262  box 0.447  kps 0.000  npos 1356  153 img/s  lr 9.98e-04
+  ep 4 it 350/402  loss 0.929  cls 0.260  box 0.446  kps 0.000  npos 1362  152 img/s  lr 9.97e-04
+  ep 4 it 400/402  loss 0.928  cls 0.260  box 0.445  kps 0.000  npos 1361  153 img/s  lr 9.97e-04
+ep 4/80  recall@0.5 0.105  prec 0.822  npred 2936  ngt 22897  time 1.8min  lr 9.97e-04
+  -> new best recall 0.1053
+  ep 5 it 50/402  loss 0.904  cls 0.254  box 0.433  kps 0.000  npos 1332  110 img/s  lr 9.97e-04
+  ep 5 it 100/402  loss 0.906  cls 0.253  box 0.435  kps 0.000  npos 1349  112 img/s  lr 9.96e-04
+  ep 5 it 150/402  loss 0.905  cls 0.254  box 0.434  kps 0.000  npos 1345  114 img/s  lr 9.96e-04
+  ep 5 it 200/402  loss 0.902  cls 0.253  box 0.433  kps 0.000  npos 1361  114 img/s  lr 9.96e-04
+  ep 5 it 250/402  loss 0.901  cls 0.253  box 0.431  kps 0.000  npos 1351  115 img/s  lr 9.95e-04
+  ep 5 it 300/402  loss 0.896  cls 0.252  box 0.429  kps 0.000  npos 1350  115 img/s  lr 9.95e-04
+  ep 5 it 350/402  loss 0.895  cls 0.251  box 0.429  kps 0.000  npos 1365  115 img/s  lr 9.95e-04
+  ep 5 it 400/402  loss 0.892  cls 0.250  box 0.428  kps 0.000  npos 1364  116 img/s  lr 9.94e-04
+ep 5/80  recall@0.5 0.154  prec 0.777  npred 4535  ngt 22897  time 2.2min  lr 9.94e-04
+  -> new best recall 0.1538
+  ep 6 it 50/402  loss 0.876  cls 0.245  box 0.421  kps 0.000  npos 1397  110 img/s  lr 9.94e-04
+  ep 6 it 100/402  loss 0.878  cls 0.244  box 0.423  kps 0.000  npos 1371  112 img/s  lr 9.94e-04
+  ep 6 it 150/402  loss 0.875  cls 0.243  box 0.421  kps 0.000  npos 1367  114 img/s  lr 9.93e-04
+  ep 6 it 200/402  loss 0.874  cls 0.244  box 0.420  kps 0.000  npos 1365  115 img/s  lr 9.93e-04
+  ep 6 it 250/402  loss 0.876  cls 0.245  box 0.421  kps 0.000  npos 1358  115 img/s  lr 9.92e-04
+  ep 6 it 300/402  loss 0.873  cls 0.244  box 0.419  kps 0.000  npos 1353  115 img/s  lr 9.92e-04
+  ep 6 it 350/402  loss 0.871  cls 0.244  box 0.418  kps 0.000  npos 1356  116 img/s  lr 9.92e-04
+  ep 6 it 400/402  loss 0.867  cls 0.242  box 0.417  kps 0.000  npos 1357  116 img/s  lr 9.91e-04
+ep 6/80  recall@0.5 0.161  prec 0.794  npred 4638  ngt 22897  time 2.2min  lr 9.91e-04
+  -> new best recall 0.1608
+  ep 7 it 50/402  loss 0.859  cls 0.243  box 0.411  kps 0.000  npos 1343  111 img/s  lr 9.91e-04
+  ep 7 it 100/402  loss 0.857  cls 0.241  box 0.410  kps 0.000  npos 1346  114 img/s  lr 9.90e-04
+  ep 7 it 150/402  loss 0.852  cls 0.240  box 0.408  kps 0.000  npos 1346  115 img/s  lr 9.90e-04
+  ep 7 it 200/402  loss 0.852  cls 0.239  box 0.408  kps 0.000  npos 1365  115 img/s  lr 9.89e-04
+  ep 7 it 250/402  loss 0.849  cls 0.237  box 0.408  kps 0.000  npos 1377  115 img/s  lr 9.89e-04
+  ep 7 it 300/402  loss 0.846  cls 0.237  box 0.406  kps 0.000  npos 1369  116 img/s  lr 9.88e-04
+  ep 7 it 350/402  loss 0.844  cls 0.236  box 0.405  kps 0.000  npos 1364  116 img/s  lr 9.87e-04
+  ep 7 it 400/402  loss 0.844  cls 0.237  box 0.405  kps 0.000  npos 1361  116 img/s  lr 9.87e-04
+ep 7/80  recall@0.5 0.150  prec 0.873  npred 3944  ngt 22897  time 2.2min  lr 9.87e-04
+  ep 8 it 50/402  loss 0.822  cls 0.230  box 0.395  kps 0.000  npos 1394  108 img/s  lr 9.86e-04
+  ep 8 it 100/402  loss 0.819  cls 0.229  box 0.394  kps 0.000  npos 1395  113 img/s  lr 9.86e-04
+  ep 8 it 150/402  loss 0.825  cls 0.231  box 0.396  kps 0.000  npos 1400  114 img/s  lr 9.85e-04
+  ep 8 it 200/402  loss 0.827  cls 0.232  box 0.397  kps 0.000  npos 1391  115 img/s  lr 9.85e-04
+  ep 8 it 250/402  loss 0.828  cls 0.232  box 0.397  kps 0.000  npos 1379  115 img/s  lr 9.84e-04
+  ep 8 it 300/402  loss 0.831  cls 0.233  box 0.398  kps 0.000  npos 1372  115 img/s  lr 9.83e-04
+  ep 8 it 350/402  loss 0.829  cls 0.233  box 0.398  kps 0.000  npos 1370  116 img/s  lr 9.83e-04
+  ep 8 it 400/402  loss 0.829  cls 0.232  box 0.398  kps 0.000  npos 1375  116 img/s  lr 9.82e-04
+ep 8/80  recall@0.5 0.146  prec 0.887  npred 3776  ngt 22897  time 2.2min  lr 9.82e-04
+  ep 9 it 50/402  loss 0.822  cls 0.227  box 0.397  kps 0.000  npos 1385  110 img/s  lr 9.81e-04
+  ep 9 it 100/402  loss 0.819  cls 0.226  box 0.395  kps 0.000  npos 1369  114 img/s  lr 9.81e-04
+  ep 9 it 150/402  loss 0.821  cls 0.227  box 0.396  kps 0.000  npos 1379  115 img/s  lr 9.80e-04
+  ep 9 it 200/402  loss 0.820  cls 0.227  box 0.395  kps 0.000  npos 1373  115 img/s  lr 9.79e-04
+  ep 9 it 250/402  loss 0.817  cls 0.227  box 0.394  kps 0.000  npos 1376  115 img/s  lr 9.79e-04
+  ep 9 it 300/402  loss 0.814  cls 0.227  box 0.392  kps 0.000  npos 1372  116 img/s  lr 9.78e-04
+  ep 9 it 350/402  loss 0.812  cls 0.226  box 0.391  kps 0.000  npos 1372  117 img/s  lr 9.77e-04
+  ep 9 it 400/402  loss 0.813  cls 0.226  box 0.391  kps 0.000  npos 1372  121 img/s  lr 9.76e-04
+ep 9/80  recall@0.5 0.177  prec 0.791  npred 5137  ngt 22897  time 2.1min  lr 9.76e-04
+  -> new best recall 0.1774
+  ep 10 it 50/402  loss 0.820  cls 0.228  box 0.394  kps 0.000  npos 1383  136 img/s  lr 9.76e-04
+  ep 10 it 100/402  loss 0.802  cls 0.223  box 0.386  kps 0.000  npos 1392  125 img/s  lr 9.75e-04
+  ep 10 it 150/402  loss 0.802  cls 0.224  box 0.385  kps 0.000  npos 1377  122 img/s  lr 9.74e-04
+  ep 10 it 200/402  loss 0.807  cls 0.225  box 0.388  kps 0.000  npos 1370  119 img/s  lr 9.73e-04
+  ep 10 it 250/402  loss 0.806  cls 0.225  box 0.387  kps 0.000  npos 1373  118 img/s  lr 9.72e-04
+  ep 10 it 300/402  loss 0.803  cls 0.225  box 0.386  kps 0.000  npos 1359  118 img/s  lr 9.72e-04
+  ep 10 it 350/402  loss 0.804  cls 0.225  box 0.386  kps 0.000  npos 1361  118 img/s  lr 9.71e-04
+  ep 10 it 400/402  loss 0.802  cls 0.224  box 0.385  kps 0.000  npos 1355  118 img/s  lr 9.70e-04
+ep 10/80  recall@0.5 0.190  prec 0.847  npred 5133  ngt 22897  time 2.2min  lr 9.70e-04
+  -> new best recall 0.1899
+  ep 11 it 50/402  loss 0.786  cls 0.222  box 0.376  kps 0.000  npos 1354  110 img/s  lr 9.69e-04
+  ep 11 it 100/402  loss 0.787  cls 0.221  box 0.377  kps 0.000  npos 1378  114 img/s  lr 9.68e-04
+  ep 11 it 150/402  loss 0.784  cls 0.219  box 0.377  kps 0.000  npos 1367  115 img/s  lr 9.67e-04
+  ep 11 it 200/402  loss 0.786  cls 0.219  box 0.378  kps 0.000  npos 1369  116 img/s  lr 9.66e-04
+  ep 11 it 250/402  loss 0.791  cls 0.221  box 0.380  kps 0.000  npos 1361  117 img/s  lr 9.65e-04
+  ep 11 it 300/402  loss 0.789  cls 0.220  box 0.379  kps 0.000  npos 1369  117 img/s  lr 9.65e-04
+  ep 11 it 350/402  loss 0.788  cls 0.220  box 0.379  kps 0.000  npos 1370  117 img/s  lr 9.64e-04
+  ep 11 it 400/402  loss 0.788  cls 0.220  box 0.379  kps 0.000  npos 1372  117 img/s  lr 9.63e-04
+ep 11/80  recall@0.5 0.187  prec 0.860  npred 4973  ngt 22897  time 2.2min  lr 9.63e-04
+  ep 12 it 50/402  loss 0.781  cls 0.218  box 0.376  kps 0.000  npos 1352  112 img/s  lr 9.62e-04
+  ep 12 it 100/402  loss 0.778  cls 0.215  box 0.375  kps 0.000  npos 1381  114 img/s  lr 9.61e-04
+  ep 12 it 150/402  loss 0.781  cls 0.216  box 0.376  kps 0.000  npos 1362  115 img/s  lr 9.60e-04
+  ep 12 it 200/402  loss 0.781  cls 0.216  box 0.376  kps 0.000  npos 1359  117 img/s  lr 9.59e-04
+  ep 12 it 250/402  loss 0.779  cls 0.216  box 0.375  kps 0.000  npos 1350  117 img/s  lr 9.58e-04
+  ep 12 it 300/402  loss 0.779  cls 0.216  box 0.375  kps 0.000  npos 1362  117 img/s  lr 9.57e-04
+  ep 12 it 350/402  loss 0.778  cls 0.216  box 0.375  kps 0.000  npos 1357  117 img/s  lr 9.56e-04
+  ep 12 it 400/402  loss 0.778  cls 0.216  box 0.375  kps 0.000  npos 1355  117 img/s  lr 9.55e-04
+ep 12/80  recall@0.5 0.150  prec 0.905  npred 3790  ngt 22897  time 2.2min  lr 9.55e-04
+  ep 13 it 50/402  loss 0.779  cls 0.217  box 0.375  kps 0.000  npos 1372  115 img/s  lr 9.54e-04
+  ep 13 it 100/402  loss 0.771  cls 0.215  box 0.370  kps 0.000  npos 1364  117 img/s  lr 9.53e-04
+  ep 13 it 150/402  loss 0.775  cls 0.215  box 0.373  kps 0.000  npos 1361  118 img/s  lr 9.52e-04
+  ep 13 it 200/402  loss 0.774  cls 0.216  box 0.372  kps 0.000  npos 1361  120 img/s  lr 9.51e-04
+  ep 13 it 250/402  loss 0.776  cls 0.217  box 0.373  kps 0.000  npos 1366  120 img/s  lr 9.49e-04
+  ep 13 it 300/402  loss 0.777  cls 0.217  box 0.374  kps 0.000  npos 1375  120 img/s  lr 9.48e-04
+  ep 13 it 350/402  loss 0.775  cls 0.216  box 0.373  kps 0.000  npos 1370  121 img/s  lr 9.47e-04
+  ep 13 it 400/402  loss 0.775  cls 0.216  box 0.373  kps 0.000  npos 1369  121 img/s  lr 9.46e-04
+ep 13/80  recall@0.5 0.184  prec 0.892  npred 4720  ngt 22897  time 2.1min  lr 9.46e-04
+  ep 14 it 50/402  loss 0.781  cls 0.221  box 0.374  kps 0.000  npos 1355  112 img/s  lr 9.45e-04
+  ep 14 it 100/402  loss 0.777  cls 0.217  box 0.373  kps 0.000  npos 1381  111 img/s  lr 9.44e-04
+  ep 14 it 150/402  loss 0.776  cls 0.217  box 0.373  kps 0.000  npos 1361  115 img/s  lr 9.43e-04
+  ep 14 it 200/402  loss 0.771  cls 0.216  box 0.370  kps 0.000  npos 1350  116 img/s  lr 9.42e-04
+  ep 14 it 250/402  loss 0.772  cls 0.216  box 0.370  kps 0.000  npos 1355  118 img/s  lr 9.40e-04
+  ep 14 it 300/402  loss 0.768  cls 0.215  box 0.369  kps 0.000  npos 1363  118 img/s  lr 9.39e-04
+  ep 14 it 350/402  loss 0.767  cls 0.215  box 0.368  kps 0.000  npos 1363  119 img/s  lr 9.38e-04
+  ep 14 it 400/402  loss 0.767  cls 0.214  box 0.368  kps 0.000  npos 1362  119 img/s  lr 9.37e-04
+ep 14/80  recall@0.5 0.171  prec 0.903  npred 4341  ngt 22897  time 2.2min  lr 9.37e-04
+  ep 15 it 50/402  loss 0.774  cls 0.216  box 0.372  kps 0.000  npos 1383  114 img/s  lr 9.36e-04
+  ep 15 it 100/402  loss 0.773  cls 0.214  box 0.373  kps 0.000  npos 1389  117 img/s  lr 9.34e-04
+  ep 15 it 150/402  loss 0.765  cls 0.212  box 0.368  kps 0.000  npos 1363  120 img/s  lr 9.33e-04
+  ep 15 it 200/402  loss 0.761  cls 0.211  box 0.367  kps 0.000  npos 1364  121 img/s  lr 9.32e-04
+  ep 15 it 250/402  loss 0.761  cls 0.211  box 0.367  kps 0.000  npos 1356  122 img/s  lr 9.31e-04
+  ep 15 it 300/402  loss 0.760  cls 0.210  box 0.366  kps 0.000  npos 1356  122 img/s  lr 9.29e-04
+  ep 15 it 350/402  loss 0.759  cls 0.210  box 0.366  kps 0.000  npos 1350  123 img/s  lr 9.28e-04
+  ep 15 it 400/402  loss 0.759  cls 0.210  box 0.366  kps 0.000  npos 1359  124 img/s  lr 9.27e-04
+ep 15/80  recall@0.5 0.198  prec 0.879  npred 5151  ngt 22897  time 2.1min  lr 9.27e-04
+  -> new best recall 0.1978
+  ep 16 it 50/402  loss 0.773  cls 0.218  box 0.370  kps 0.000  npos 1391  116 img/s  lr 9.25e-04
+  ep 16 it 100/402  loss 0.764  cls 0.214  box 0.366  kps 0.000  npos 1370  121 img/s  lr 9.24e-04
+  ep 16 it 150/402  loss 0.761  cls 0.213  box 0.365  kps 0.000  npos 1368  122 img/s  lr 9.23e-04
+  ep 16 it 200/402  loss 0.761  cls 0.212  box 0.366  kps 0.000  npos 1374  122 img/s  lr 9.21e-04
+  ep 16 it 250/402  loss 0.757  cls 0.211  box 0.364  kps 0.000  npos 1375  123 img/s  lr 9.20e-04
+  ep 16 it 300/402  loss 0.758  cls 0.211  box 0.365  kps 0.000  npos 1375  123 img/s  lr 9.19e-04
+  ep 16 it 350/402  loss 0.757  cls 0.210  box 0.364  kps 0.000  npos 1374  124 img/s  lr 9.17e-04
+  ep 16 it 400/402  loss 0.755  cls 0.210  box 0.363  kps 0.000  npos 1370  124 img/s  lr 9.16e-04
+ep 16/80  recall@0.5 0.211  prec 0.863  npred 5592  ngt 22897  time 2.1min  lr 9.16e-04
+  -> new best recall 0.2107
+  ep 17 it 50/402  loss 0.756  cls 0.213  box 0.362  kps 0.000  npos 1401  118 img/s  lr 9.15e-04
+  ep 17 it 100/402  loss 0.755  cls 0.210  box 0.364  kps 0.000  npos 1385  122 img/s  lr 9.13e-04
+  ep 17 it 150/402  loss 0.751  cls 0.209  box 0.361  kps 0.000  npos 1380  122 img/s  lr 9.12e-04
+  ep 17 it 200/402  loss 0.750  cls 0.209  box 0.361  kps 0.000  npos 1371  123 img/s  lr 9.10e-04
+  ep 17 it 250/402  loss 0.747  cls 0.208  box 0.360  kps 0.000  npos 1377  124 img/s  lr 9.09e-04
+  ep 17 it 300/402  loss 0.745  cls 0.207  box 0.359  kps 0.000  npos 1375  124 img/s  lr 9.08e-04
+  ep 17 it 350/402  loss 0.744  cls 0.206  box 0.358  kps 0.000  npos 1369  125 img/s  lr 9.06e-04
+  ep 17 it 400/402  loss 0.746  cls 0.207  box 0.359  kps 0.000  npos 1361  125 img/s  lr 9.05e-04
+ep 17/80  recall@0.5 0.223  prec 0.829  npred 6146  ngt 22897  time 2.1min  lr 9.05e-04
+  -> new best recall 0.2226
+  ep 18 it 50/402  loss 0.746  cls 0.206  box 0.360  kps 0.000  npos 1358  120 img/s  lr 9.03e-04
+  ep 18 it 100/402  loss 0.741  cls 0.206  box 0.357  kps 0.000  npos 1365  123 img/s  lr 9.02e-04
+  ep 18 it 150/402  loss 0.741  cls 0.206  box 0.357  kps 0.000  npos 1366  124 img/s  lr 9.00e-04
+  ep 18 it 200/402  loss 0.741  cls 0.206  box 0.356  kps 0.000  npos 1366  125 img/s  lr 8.99e-04
+  ep 18 it 250/402  loss 0.743  cls 0.207  box 0.358  kps 0.000  npos 1364  125 img/s  lr 8.97e-04
+  ep 18 it 300/402  loss 0.745  cls 0.207  box 0.359  kps 0.000  npos 1373  125 img/s  lr 8.96e-04
+  ep 18 it 350/402  loss 0.745  cls 0.207  box 0.359  kps 0.000  npos 1371  126 img/s  lr 8.94e-04
+  ep 18 it 400/402  loss 0.745  cls 0.207  box 0.359  kps 0.000  npos 1371  126 img/s  lr 8.93e-04
+ep 18/80  recall@0.5 0.208  prec 0.892  npred 5327  ngt 22897  time 2.1min  lr 8.93e-04
+  ep 19 it 50/402  loss 0.747  cls 0.209  box 0.359  kps 0.000  npos 1367  120 img/s  lr 8.91e-04
+  ep 19 it 100/402  loss 0.745  cls 0.207  box 0.359  kps 0.000  npos 1365  122 img/s  lr 8.89e-04
+  ep 19 it 150/402  loss 0.742  cls 0.205  box 0.358  kps 0.000  npos 1384  123 img/s  lr 8.88e-04
+  ep 19 it 200/402  loss 0.744  cls 0.206  box 0.358  kps 0.000  npos 1379  124 img/s  lr 8.86e-04
+  ep 19 it 250/402  loss 0.741  cls 0.206  box 0.357  kps 0.000  npos 1369  124 img/s  lr 8.85e-04
+  ep 19 it 300/402  loss 0.743  cls 0.207  box 0.357  kps 0.000  npos 1364  125 img/s  lr 8.83e-04
+  ep 19 it 350/402  loss 0.742  cls 0.207  box 0.357  kps 0.000  npos 1368  125 img/s  lr 8.82e-04
+  ep 19 it 400/402  loss 0.742  cls 0.207  box 0.357  kps 0.000  npos 1370  125 img/s  lr 8.80e-04
+ep 19/80  recall@0.5 0.217  prec 0.890  npred 5574  ngt 22897  time 2.1min  lr 8.80e-04
+  ep 20 it 50/402  loss 0.722  cls 0.203  box 0.346  kps 0.000  npos 1369  121 img/s  lr 8.78e-04
+  ep 20 it 100/402  loss 0.734  cls 0.205  box 0.352  kps 0.000  npos 1367  123 img/s  lr 8.77e-04
+  ep 20 it 150/402  loss 0.730  cls 0.203  box 0.351  kps 0.000  npos 1366  124 img/s  lr 8.75e-04
+  ep 20 it 200/402  loss 0.733  cls 0.204  box 0.353  kps 0.000  npos 1372  125 img/s  lr 8.73e-04
+  ep 20 it 250/402  loss 0.736  cls 0.204  box 0.355  kps 0.000  npos 1372  125 img/s  lr 8.72e-04
+  ep 20 it 300/402  loss 0.735  cls 0.204  box 0.354  kps 0.000  npos 1377  125 img/s  lr 8.70e-04
+  ep 20 it 350/402  loss 0.733  cls 0.203  box 0.353  kps 0.000  npos 1373  125 img/s  lr 8.68e-04
+  ep 20 it 400/402  loss 0.733  cls 0.204  box 0.353  kps 0.000  npos 1371  125 img/s  lr 8.67e-04
+ep 20/80  recall@0.5 0.199  prec 0.910  npred 4997  ngt 22897  time 2.1min  lr 8.67e-04
+  ep 21 it 50/402  loss 0.720  cls 0.203  box 0.345  kps 0.000  npos 1290  117 img/s  lr 8.65e-04
+  ep 21 it 100/402  loss 0.730  cls 0.205  box 0.350  kps 0.000  npos 1324  122 img/s  lr 8.63e-04
+  ep 21 it 150/402  loss 0.727  cls 0.202  box 0.350  kps 0.000  npos 1352  123 img/s  lr 8.62e-04
+  ep 21 it 200/402  loss 0.726  cls 0.202  box 0.350  kps 0.000  npos 1354  124 img/s  lr 8.60e-04
+  ep 21 it 250/402  loss 0.728  cls 0.202  box 0.350  kps 0.000  npos 1358  124 img/s  lr 8.58e-04
+  ep 21 it 300/402  loss 0.728  cls 0.202  box 0.350  kps 0.000  npos 1360  124 img/s  lr 8.56e-04
+  ep 21 it 350/402  loss 0.730  cls 0.203  box 0.351  kps 0.000  npos 1360  125 img/s  lr 8.55e-04
+  ep 21 it 400/402  loss 0.728  cls 0.202  box 0.351  kps 0.000  npos 1362  125 img/s  lr 8.53e-04
+ep 21/80  recall@0.5 0.223  prec 0.869  npred 5861  ngt 22897  time 2.1min  lr 8.53e-04
+  ep 22 it 50/402  loss 0.722  cls 0.202  box 0.347  kps 0.000  npos 1373  120 img/s  lr 8.51e-04
+  ep 22 it 100/402  loss 0.726  cls 0.202  box 0.349  kps 0.000  npos 1367  123 img/s  lr 8.49e-04
+  ep 22 it 150/402  loss 0.720  cls 0.201  box 0.346  kps 0.000  npos 1352  124 img/s  lr 8.47e-04
+  ep 22 it 200/402  loss 0.718  cls 0.200  box 0.345  kps 0.000  npos 1365  125 img/s  lr 8.46e-04
+  ep 22 it 250/402  loss 0.720  cls 0.200  box 0.347  kps 0.000  npos 1366  125 img/s  lr 8.44e-04
+  ep 22 it 300/402  loss 0.722  cls 0.201  box 0.347  kps 0.000  npos 1366  125 img/s  lr 8.42e-04
+  ep 22 it 350/402  loss 0.724  cls 0.201  box 0.348  kps 0.000  npos 1366  125 img/s  lr 8.40e-04
+  ep 22 it 400/402  loss 0.726  cls 0.202  box 0.350  kps 0.000  npos 1361  125 img/s  lr 8.38e-04
+ep 22/80  recall@0.5 0.228  prec 0.870  npred 6000  ngt 22897  time 2.1min  lr 8.38e-04
+  -> new best recall 0.2281
+  ep 23 it 50/402  loss 0.715  cls 0.196  box 0.346  kps 0.000  npos 1348  117 img/s  lr 8.37e-04
+  ep 23 it 100/402  loss 0.721  cls 0.200  box 0.348  kps 0.000  npos 1348  119 img/s  lr 8.35e-04
+  ep 23 it 150/402  loss 0.721  cls 0.199  box 0.348  kps 0.000  npos 1354  120 img/s  lr 8.33e-04
+  ep 23 it 200/402  loss 0.723  cls 0.200  box 0.348  kps 0.000  npos 1346  121 img/s  lr 8.31e-04
+  ep 23 it 250/402  loss 0.724  cls 0.201  box 0.349  kps 0.000  npos 1350  122 img/s  lr 8.29e-04
+  ep 23 it 300/402  loss 0.722  cls 0.200  box 0.348  kps 0.000  npos 1357  123 img/s  lr 8.27e-04
+  ep 23 it 350/402  loss 0.723  cls 0.200  box 0.348  kps 0.000  npos 1357  123 img/s  lr 8.25e-04
+  ep 23 it 400/402  loss 0.724  cls 0.200  box 0.349  kps 0.000  npos 1361  124 img/s  lr 8.24e-04
+ep 23/80  recall@0.5 0.203  prec 0.894  npred 5184  ngt 22897  time 2.1min  lr 8.23e-04
+  ep 24 it 50/402  loss 0.719  cls 0.201  box 0.345  kps 0.000  npos 1407  119 img/s  lr 8.22e-04
+  ep 24 it 100/402  loss 0.722  cls 0.202  box 0.347  kps 0.000  npos 1376  123 img/s  lr 8.20e-04
+  ep 24 it 150/402  loss 0.726  cls 0.201  box 0.350  kps 0.000  npos 1398  124 img/s  lr 8.18e-04
+  ep 24 it 200/402  loss 0.724  cls 0.201  box 0.349  kps 0.000  npos 1378  124 img/s  lr 8.16e-04
+  ep 24 it 250/402  loss 0.725  cls 0.201  box 0.349  kps 0.000  npos 1371  125 img/s  lr 8.14e-04
+  ep 24 it 300/402  loss 0.723  cls 0.200  box 0.349  kps 0.000  npos 1368  125 img/s  lr 8.12e-04
+  ep 24 it 350/402  loss 0.722  cls 0.200  box 0.348  kps 0.000  npos 1370  125 img/s  lr 8.10e-04
+  ep 24 it 400/402  loss 0.720  cls 0.199  box 0.347  kps 0.000  npos 1368  126 img/s  lr 8.08e-04
+ep 24/80  recall@0.5 0.211  prec 0.907  npred 5324  ngt 22897  time 2.1min  lr 8.08e-04
+  ep 25 it 50/402  loss 0.711  cls 0.195  box 0.344  kps 0.000  npos 1386  118 img/s  lr 8.06e-04
+  ep 25 it 100/402  loss 0.717  cls 0.198  box 0.346  kps 0.000  npos 1375  123 img/s  lr 8.04e-04
+  ep 25 it 150/402  loss 0.716  cls 0.198  box 0.346  kps 0.000  npos 1383  124 img/s  lr 8.02e-04
+  ep 25 it 200/402  loss 0.715  cls 0.198  box 0.345  kps 0.000  npos 1375  125 img/s  lr 8.00e-04
+  ep 25 it 250/402  loss 0.714  cls 0.198  box 0.344  kps 0.000  npos 1368  125 img/s  lr 7.98e-04
+  ep 25 it 300/402  loss 0.715  cls 0.198  box 0.344  kps 0.000  npos 1368  126 img/s  lr 7.96e-04
+  ep 25 it 350/402  loss 0.714  cls 0.199  box 0.344  kps 0.000  npos 1363  126 img/s  lr 7.94e-04
+  ep 25 it 400/402  loss 0.714  cls 0.198  box 0.344  kps 0.000  npos 1362  126 img/s  lr 7.92e-04
+ep 25/80  recall@0.5 0.224  prec 0.877  npred 5849  ngt 22897  time 2.1min  lr 7.92e-04
+  ep 26 it 50/402  loss 0.722  cls 0.203  box 0.346  kps 0.000  npos 1390  121 img/s  lr 7.90e-04
+  ep 26 it 100/402  loss 0.722  cls 0.201  box 0.347  kps 0.000  npos 1382  124 img/s  lr 7.88e-04
+  ep 26 it 150/402  loss 0.718  cls 0.200  box 0.345  kps 0.000  npos 1376  124 img/s  lr 7.86e-04
+  ep 26 it 200/402  loss 0.715  cls 0.199  box 0.344  kps 0.000  npos 1373  125 img/s  lr 7.84e-04
+  ep 26 it 250/402  loss 0.716  cls 0.199  box 0.345  kps 0.000  npos 1381  124 img/s  lr 7.82e-04
+  ep 26 it 300/402  loss 0.719  cls 0.200  box 0.346  kps 0.000  npos 1381  125 img/s  lr 7.80e-04
+  ep 26 it 350/402  loss 0.718  cls 0.199  box 0.346  kps 0.000  npos 1378  125 img/s  lr 7.78e-04
+  ep 26 it 400/402  loss 0.717  cls 0.199  box 0.345  kps 0.000  npos 1377  125 img/s  lr 7.76e-04
+ep 26/80  recall@0.5 0.215  prec 0.916  npred 5378  ngt 22897  time 2.1min  lr 7.76e-04
+  ep 27 it 50/402  loss 0.707  cls 0.196  box 0.341  kps 0.000  npos 1349  120 img/s  lr 7.74e-04
+  ep 27 it 100/402  loss 0.713  cls 0.198  box 0.344  kps 0.000  npos 1341  123 img/s  lr 7.71e-04
+  ep 27 it 150/402  loss 0.715  cls 0.198  box 0.345  kps 0.000  npos 1339  124 img/s  lr 7.69e-04
+  ep 27 it 200/402  loss 0.714  cls 0.197  box 0.344  kps 0.000  npos 1340  124 img/s  lr 7.67e-04
+  ep 27 it 250/402  loss 0.711  cls 0.196  box 0.343  kps 0.000  npos 1356  125 img/s  lr 7.65e-04
+  ep 27 it 300/402  loss 0.710  cls 0.196  box 0.343  kps 0.000  npos 1360  125 img/s  lr 7.63e-04
+  ep 27 it 350/402  loss 0.710  cls 0.196  box 0.343  kps 0.000  npos 1359  125 img/s  lr 7.61e-04
+  ep 27 it 400/402  loss 0.707  cls 0.195  box 0.341  kps 0.000  npos 1363  125 img/s  lr 7.59e-04
+ep 27/80  recall@0.5 0.236  prec 0.884  npred 6118  ngt 22897  time 2.1min  lr 7.59e-04
+  -> new best recall 0.2361
+  ep 28 it 50/402  loss 0.697  cls 0.194  box 0.335  kps 0.000  npos 1371  123 img/s  lr 7.57e-04
+  ep 28 it 100/402  loss 0.701  cls 0.195  box 0.337  kps 0.000  npos 1370  124 img/s  lr 7.55e-04
+  ep 28 it 150/402  loss 0.699  cls 0.194  box 0.337  kps 0.000  npos 1372  124 img/s  lr 7.52e-04
+  ep 28 it 200/402  loss 0.702  cls 0.195  box 0.338  kps 0.000  npos 1371  125 img/s  lr 7.50e-04
+  ep 28 it 250/402  loss 0.705  cls 0.196  box 0.339  kps 0.000  npos 1364  125 img/s  lr 7.48e-04
+  ep 28 it 300/402  loss 0.708  cls 0.197  box 0.341  kps 0.000  npos 1355  125 img/s  lr 7.46e-04
+  ep 28 it 350/402  loss 0.709  cls 0.197  box 0.342  kps 0.000  npos 1361  126 img/s  lr 7.44e-04
+  ep 28 it 400/402  loss 0.710  cls 0.197  box 0.342  kps 0.000  npos 1359  126 img/s  lr 7.42e-04
+ep 28/80  recall@0.5 0.200  prec 0.930  npred 4913  ngt 22897  time 2.1min  lr 7.42e-04
+  ep 29 it 50/402  loss 0.706  cls 0.194  box 0.342  kps 0.000  npos 1379  120 img/s  lr 7.39e-04
+  ep 29 it 100/402  loss 0.701  cls 0.194  box 0.338  kps 0.000  npos 1353  124 img/s  lr 7.37e-04
+  ep 29 it 150/402  loss 0.700  cls 0.193  box 0.338  kps 0.000  npos 1370  125 img/s  lr 7.35e-04
+  ep 29 it 200/402  loss 0.703  cls 0.195  box 0.339  kps 0.000  npos 1364  123 img/s  lr 7.33e-04
+  ep 29 it 250/402  loss 0.701  cls 0.194  box 0.338  kps 0.000  npos 1372  124 img/s  lr 7.31e-04
+  ep 29 it 300/402  loss 0.702  cls 0.194  box 0.339  kps 0.000  npos 1365  124 img/s  lr 7.28e-04
+  ep 29 it 350/402  loss 0.703  cls 0.194  box 0.339  kps 0.000  npos 1364  125 img/s  lr 7.26e-04
+  ep 29 it 400/402  loss 0.705  cls 0.195  box 0.340  kps 0.000  npos 1359  125 img/s  lr 7.24e-04
+ep 29/80  recall@0.5 0.226  prec 0.890  npred 5803  ngt 22897  time 2.1min  lr 7.24e-04
+  ep 30 it 50/402  loss 0.716  cls 0.201  box 0.343  kps 0.000  npos 1339  119 img/s  lr 7.22e-04
+  ep 30 it 100/402  loss 0.709  cls 0.198  box 0.341  kps 0.000  npos 1344  122 img/s  lr 7.19e-04
+  ep 30 it 150/402  loss 0.704  cls 0.195  box 0.339  kps 0.000  npos 1370  124 img/s  lr 7.17e-04
+  ep 30 it 200/402  loss 0.700  cls 0.194  box 0.337  kps 0.000  npos 1358  124 img/s  lr 7.15e-04
+  ep 30 it 250/402  loss 0.702  cls 0.195  box 0.338  kps 0.000  npos 1354  124 img/s  lr 7.13e-04
+  ep 30 it 300/402  loss 0.701  cls 0.194  box 0.338  kps 0.000  npos 1354  125 img/s  lr 7.11e-04
+  ep 30 it 350/402  loss 0.703  cls 0.195  box 0.339  kps 0.000  npos 1359  124 img/s  lr 7.08e-04
+  ep 30 it 400/402  loss 0.704  cls 0.195  box 0.339  kps 0.000  npos 1353  125 img/s  lr 7.06e-04
+ep 30/80  recall@0.5 0.216  prec 0.924  npred 5341  ngt 22897  time 2.1min  lr 7.06e-04
+  ep 31 it 50/402  loss 0.712  cls 0.196  box 0.344  kps 0.000  npos 1333  124 img/s  lr 7.04e-04
+  ep 31 it 100/402  loss 0.706  cls 0.195  box 0.341  kps 0.000  npos 1372  124 img/s  lr 7.01e-04
+  ep 31 it 150/402  loss 0.702  cls 0.193  box 0.339  kps 0.000  npos 1371  124 img/s  lr 6.99e-04
+  ep 31 it 200/402  loss 0.700  cls 0.192  box 0.339  kps 0.000  npos 1369  124 img/s  lr 6.97e-04
+  ep 31 it 250/402  loss 0.701  cls 0.193  box 0.339  kps 0.000  npos 1362  124 img/s  lr 6.95e-04
+  ep 31 it 300/402  loss 0.699  cls 0.193  box 0.337  kps 0.000  npos 1356  125 img/s  lr 6.92e-04
+  ep 31 it 350/402  loss 0.700  cls 0.193  box 0.338  kps 0.000  npos 1354  124 img/s  lr 6.90e-04
+  ep 31 it 400/402  loss 0.700  cls 0.193  box 0.338  kps 0.000  npos 1359  124 img/s  lr 6.88e-04
+ep 31/80  recall@0.5 0.253  prec 0.871  npred 6643  ngt 22897  time 2.1min  lr 6.88e-04
+  -> new best recall 0.2527
+  ep 32 it 50/402  loss 0.688  cls 0.191  box 0.331  kps 0.000  npos 1337  118 img/s  lr 6.85e-04
+  ep 32 it 100/402  loss 0.694  cls 0.192  box 0.335  kps 0.000  npos 1353  121 img/s  lr 6.83e-04
+  ep 32 it 150/402  loss 0.695  cls 0.193  box 0.335  kps 0.000  npos 1345  123 img/s  lr 6.81e-04
+  ep 32 it 200/402  loss 0.698  cls 0.194  box 0.336  kps 0.000  npos 1359  124 img/s  lr 6.78e-04
+  ep 32 it 250/402  loss 0.700  cls 0.194  box 0.337  kps 0.000  npos 1355  125 img/s  lr 6.76e-04
+  ep 32 it 300/402  loss 0.697  cls 0.193  box 0.336  kps 0.000  npos 1351  125 img/s  lr 6.74e-04
+  ep 32 it 350/402  loss 0.698  cls 0.193  box 0.337  kps 0.000  npos 1360  125 img/s  lr 6.71e-04
+  ep 32 it 400/402  loss 0.698  cls 0.193  box 0.337  kps 0.000  npos 1360  125 img/s  lr 6.69e-04
+ep 32/80  recall@0.5 0.228  prec 0.903  npred 5781  ngt 22897  time 2.1min  lr 6.69e-04
+  ep 33 it 50/402  loss 0.705  cls 0.193  box 0.342  kps 0.000  npos 1374  121 img/s  lr 6.67e-04
+  ep 33 it 100/402  loss 0.702  cls 0.193  box 0.340  kps 0.000  npos 1394  124 img/s  lr 6.64e-04
+  ep 33 it 150/402  loss 0.700  cls 0.192  box 0.338  kps 0.000  npos 1387  124 img/s  lr 6.62e-04
+  ep 33 it 200/402  loss 0.695  cls 0.191  box 0.336  kps 0.000  npos 1380  125 img/s  lr 6.60e-04
+  ep 33 it 250/402  loss 0.693  cls 0.190  box 0.335  kps 0.000  npos 1380  125 img/s  lr 6.57e-04
+  ep 33 it 300/402  loss 0.694  cls 0.190  box 0.336  kps 0.000  npos 1375  125 img/s  lr 6.55e-04
+  ep 33 it 350/402  loss 0.694  cls 0.191  box 0.336  kps 0.000  npos 1376  126 img/s  lr 6.53e-04
+  ep 33 it 400/402  loss 0.694  cls 0.190  box 0.336  kps 0.000  npos 1373  126 img/s  lr 6.50e-04
+ep 33/80  recall@0.5 0.246  prec 0.872  npred 6452  ngt 22897  time 2.1min  lr 6.50e-04
+  ep 34 it 50/402  loss 0.678  cls 0.187  box 0.328  kps 0.000  npos 1375  121 img/s  lr 6.48e-04
+  ep 34 it 100/402  loss 0.688  cls 0.191  box 0.331  kps 0.000  npos 1325  123 img/s  lr 6.45e-04
+  ep 34 it 150/402  loss 0.692  cls 0.192  box 0.333  kps 0.000  npos 1325  124 img/s  lr 6.43e-04
+  ep 34 it 200/402  loss 0.690  cls 0.191  box 0.333  kps 0.000  npos 1338  124 img/s  lr 6.41e-04
+  ep 34 it 250/402  loss 0.692  cls 0.190  box 0.335  kps 0.000  npos 1351  124 img/s  lr 6.38e-04
+  ep 34 it 300/402  loss 0.692  cls 0.191  box 0.334  kps 0.000  npos 1347  124 img/s  lr 6.36e-04
+  ep 34 it 350/402  loss 0.690  cls 0.190  box 0.333  kps 0.000  npos 1356  124 img/s  lr 6.33e-04
+  ep 34 it 400/402  loss 0.689  cls 0.189  box 0.333  kps 0.000  npos 1366  124 img/s  lr 6.31e-04
+ep 34/80  recall@0.5 0.230  prec 0.913  npred 5765  ngt 22897  time 2.1min  lr 6.31e-04
+  ep 35 it 50/402  loss 0.691  cls 0.191  box 0.334  kps 0.000  npos 1412  120 img/s  lr 6.29e-04
+  ep 35 it 100/402  loss 0.690  cls 0.192  box 0.332  kps 0.000  npos 1385  124 img/s  lr 6.26e-04
+  ep 35 it 150/402  loss 0.691  cls 0.192  box 0.333  kps 0.000  npos 1374  124 img/s  lr 6.24e-04
+  ep 35 it 200/402  loss 0.694  cls 0.192  box 0.334  kps 0.000  npos 1363  124 img/s  lr 6.21e-04
+  ep 35 it 250/402  loss 0.692  cls 0.192  box 0.333  kps 0.000  npos 1371  124 img/s  lr 6.19e-04
+  ep 35 it 300/402  loss 0.692  cls 0.191  box 0.334  kps 0.000  npos 1366  125 img/s  lr 6.17e-04
+  ep 35 it 350/402  loss 0.694  cls 0.191  box 0.335  kps 0.000  npos 1378  125 img/s  lr 6.14e-04
+  ep 35 it 400/402  loss 0.692  cls 0.191  box 0.334  kps 0.000  npos 1366  125 img/s  lr 6.12e-04
+ep 35/80  recall@0.5 0.235  prec 0.900  npred 5973  ngt 22897  time 2.1min  lr 6.12e-04
+  ep 36 it 50/402  loss 0.690  cls 0.192  box 0.332  kps 0.000  npos 1343  118 img/s  lr 6.09e-04
+  ep 36 it 100/402  loss 0.688  cls 0.190  box 0.332  kps 0.000  npos 1342  122 img/s  lr 6.07e-04
+  ep 36 it 150/402  loss 0.688  cls 0.190  box 0.332  kps 0.000  npos 1360  123 img/s  lr 6.04e-04
+  ep 36 it 200/402  loss 0.683  cls 0.189  box 0.330  kps 0.000  npos 1374  124 img/s  lr 6.02e-04
+  ep 36 it 250/402  loss 0.684  cls 0.188  box 0.331  kps 0.000  npos 1372  125 img/s  lr 6.00e-04
+  ep 36 it 300/402  loss 0.690  cls 0.190  box 0.333  kps 0.000  npos 1372  124 img/s  lr 5.97e-04
+  ep 36 it 350/402  loss 0.690  cls 0.190  box 0.333  kps 0.000  npos 1374  124 img/s  lr 5.95e-04
+  ep 36 it 400/402  loss 0.690  cls 0.190  box 0.333  kps 0.000  npos 1374  124 img/s  lr 5.92e-04
+ep 36/80  recall@0.5 0.257  prec 0.877  npred 6717  ngt 22897  time 2.1min  lr 5.92e-04
+  -> new best recall 0.2574
+  ep 37 it 50/402  loss 0.692  cls 0.191  box 0.334  kps 0.000  npos 1381  116 img/s  lr 5.90e-04
+  ep 37 it 100/402  loss 0.696  cls 0.194  box 0.335  kps 0.000  npos 1354  119 img/s  lr 5.87e-04
+  ep 37 it 150/402  loss 0.688  cls 0.191  box 0.332  kps 0.000  npos 1361  122 img/s  lr 5.85e-04
+  ep 37 it 200/402  loss 0.690  cls 0.191  box 0.333  kps 0.000  npos 1359  122 img/s  lr 5.82e-04
+  ep 37 it 250/402  loss 0.691  cls 0.191  box 0.334  kps 0.000  npos 1363  122 img/s  lr 5.80e-04
+  ep 37 it 300/402  loss 0.689  cls 0.190  box 0.333  kps 0.000  npos 1366  123 img/s  lr 5.77e-04
+  ep 37 it 350/402  loss 0.687  cls 0.189  box 0.332  kps 0.000  npos 1362  123 img/s  lr 5.75e-04
+  ep 37 it 400/402  loss 0.687  cls 0.190  box 0.332  kps 0.000  npos 1357  123 img/s  lr 5.73e-04
+ep 37/80  recall@0.5 0.232  prec 0.918  npred 5774  ngt 22897  time 2.1min  lr 5.72e-04
+  ep 38 it 50/402  loss 0.681  cls 0.186  box 0.330  kps 0.000  npos 1351  120 img/s  lr 5.70e-04
+  ep 38 it 100/402  loss 0.677  cls 0.186  box 0.327  kps 0.000  npos 1358  124 img/s  lr 5.68e-04
+  ep 38 it 150/402  loss 0.676  cls 0.186  box 0.327  kps 0.000  npos 1346  124 img/s  lr 5.65e-04
+  ep 38 it 200/402  loss 0.679  cls 0.187  box 0.328  kps 0.000  npos 1344  125 img/s  lr 5.63e-04
+  ep 38 it 250/402  loss 0.683  cls 0.189  box 0.330  kps 0.000  npos 1344  125 img/s  lr 5.60e-04
+  ep 38 it 300/402  loss 0.681  cls 0.188  box 0.329  kps 0.000  npos 1359  125 img/s  lr 5.58e-04
+  ep 38 it 350/402  loss 0.683  cls 0.188  box 0.330  kps 0.000  npos 1362  125 img/s  lr 5.55e-04
+  ep 38 it 400/402  loss 0.682  cls 0.188  box 0.330  kps 0.000  npos 1364  125 img/s  lr 5.53e-04
+ep 38/80  recall@0.5 0.247  prec 0.891  npred 6346  ngt 22897  time 2.1min  lr 5.53e-04
+  ep 39 it 50/402  loss 0.692  cls 0.191  box 0.334  kps 0.000  npos 1336  116 img/s  lr 5.50e-04
+  ep 39 it 100/402  loss 0.684  cls 0.189  box 0.330  kps 0.000  npos 1322  120 img/s  lr 5.48e-04
+  ep 39 it 150/402  loss 0.682  cls 0.188  box 0.330  kps 0.000  npos 1341  122 img/s  lr 5.45e-04
+  ep 39 it 200/402  loss 0.678  cls 0.187  box 0.328  kps 0.000  npos 1345  123 img/s  lr 5.43e-04
+  ep 39 it 250/402  loss 0.679  cls 0.187  box 0.328  kps 0.000  npos 1358  123 img/s  lr 5.40e-04
+  ep 39 it 300/402  loss 0.682  cls 0.188  box 0.329  kps 0.000  npos 1358  124 img/s  lr 5.38e-04
+  ep 39 it 350/402  loss 0.680  cls 0.187  box 0.329  kps 0.000  npos 1352  124 img/s  lr 5.35e-04
+  ep 39 it 400/402  loss 0.682  cls 0.188  box 0.330  kps 0.000  npos 1350  125 img/s  lr 5.33e-04
+ep 39/80  recall@0.5 0.216  prec 0.930  npred 5314  ngt 22897  time 2.1min  lr 5.33e-04
+  ep 40 it 50/402  loss 0.690  cls 0.189  box 0.334  kps 0.000  npos 1364  117 img/s  lr 5.30e-04
+  ep 40 it 100/402  loss 0.679  cls 0.188  box 0.328  kps 0.000  npos 1360  123 img/s  lr 5.28e-04
+  ep 40 it 150/402  loss 0.679  cls 0.188  box 0.328  kps 0.000  npos 1360  124 img/s  lr 5.25e-04
+  ep 40 it 200/402  loss 0.680  cls 0.188  box 0.328  kps 0.000  npos 1361  125 img/s  lr 5.23e-04
+  ep 40 it 250/402  loss 0.683  cls 0.188  box 0.330  kps 0.000  npos 1356  125 img/s  lr 5.20e-04
+  ep 40 it 300/402  loss 0.682  cls 0.188  box 0.329  kps 0.000  npos 1356  125 img/s  lr 5.18e-04
+  ep 40 it 350/402  loss 0.682  cls 0.188  box 0.329  kps 0.000  npos 1353  126 img/s  lr 5.16e-04
+  ep 40 it 400/402  loss 0.682  cls 0.188  box 0.329  kps 0.000  npos 1354  126 img/s  lr 5.13e-04
+ep 40/80  recall@0.5 0.228  prec 0.925  npred 5637  ngt 22897  time 2.1min  lr 5.13e-04
+  ep 41 it 50/402  loss 0.672  cls 0.186  box 0.324  kps 0.000  npos 1327  123 img/s  lr 5.10e-04
+  ep 41 it 100/402  loss 0.675  cls 0.185  box 0.327  kps 0.000  npos 1348  123 img/s  lr 5.08e-04
+  ep 41 it 150/402  loss 0.675  cls 0.185  box 0.327  kps 0.000  npos 1353  124 img/s  lr 5.06e-04
+  ep 41 it 200/402  loss 0.674  cls 0.184  box 0.326  kps 0.000  npos 1361  125 img/s  lr 5.03e-04
+  ep 41 it 250/402  loss 0.680  cls 0.186  box 0.329  kps 0.000  npos 1359  125 img/s  lr 5.01e-04
+  ep 41 it 300/402  loss 0.679  cls 0.186  box 0.329  kps 0.000  npos 1365  123 img/s  lr 4.98e-04
+  ep 41 it 350/402  loss 0.679  cls 0.186  box 0.329  kps 0.000  npos 1357  121 img/s  lr 4.96e-04
+  ep 41 it 400/402  loss 0.678  cls 0.186  box 0.328  kps 0.000  npos 1366  121 img/s  lr 4.93e-04
+ep 41/80  recall@0.5 0.264  prec 0.877  npred 6883  ngt 22897  time 2.1min  lr 4.93e-04
+  -> new best recall 0.2636
+  ep 42 it 50/402  loss 0.682  cls 0.185  box 0.331  kps 0.000  npos 1393  109 img/s  lr 4.91e-04
+  ep 42 it 100/402  loss 0.687  cls 0.188  box 0.333  kps 0.000  npos 1408  114 img/s  lr 4.88e-04
+  ep 42 it 150/402  loss 0.684  cls 0.187  box 0.331  kps 0.000  npos 1392  116 img/s  lr 4.86e-04
+  ep 42 it 200/402  loss 0.684  cls 0.187  box 0.331  kps 0.000  npos 1396  116 img/s  lr 4.83e-04
+  ep 42 it 250/402  loss 0.686  cls 0.188  box 0.332  kps 0.000  npos 1380  116 img/s  lr 4.81e-04
+  ep 42 it 300/402  loss 0.685  cls 0.188  box 0.331  kps 0.000  npos 1370  117 img/s  lr 4.78e-04
+  ep 42 it 350/402  loss 0.681  cls 0.187  box 0.329  kps 0.000  npos 1360  117 img/s  lr 4.76e-04
+  ep 42 it 400/402  loss 0.679  cls 0.186  box 0.328  kps 0.000  npos 1363  118 img/s  lr 4.73e-04
+ep 42/80  recall@0.5 0.254  prec 0.878  npred 6619  ngt 22897  time 2.2min  lr 4.73e-04
+  ep 43 it 50/402  loss 0.672  cls 0.187  box 0.324  kps 0.000  npos 1353  112 img/s  lr 4.71e-04
+  ep 43 it 100/402  loss 0.679  cls 0.187  box 0.328  kps 0.000  npos 1354  115 img/s  lr 4.68e-04
+  ep 43 it 150/402  loss 0.681  cls 0.187  box 0.329  kps 0.000  npos 1364  123 img/s  lr 4.66e-04
+  ep 43 it 200/402  loss 0.682  cls 0.188  box 0.330  kps 0.000  npos 1367  129 img/s  lr 4.63e-04
+  ep 43 it 250/402  loss 0.682  cls 0.188  box 0.329  kps 0.000  npos 1360  132 img/s  lr 4.61e-04
+  ep 43 it 300/402  loss 0.680  cls 0.187  box 0.329  kps 0.000  npos 1371  134 img/s  lr 4.58e-04
+  ep 43 it 350/402  loss 0.680  cls 0.187  box 0.329  kps 0.000  npos 1369  135 img/s  lr 4.56e-04
+  ep 43 it 400/402  loss 0.678  cls 0.186  box 0.328  kps 0.000  npos 1362  137 img/s  lr 4.53e-04
+ep 43/80  recall@0.5 0.233  prec 0.927  npred 5750  ngt 22897  time 1.9min  lr 4.53e-04
+  ep 44 it 50/402  loss 0.662  cls 0.180  box 0.321  kps 0.000  npos 1383  138 img/s  lr 4.51e-04
+  ep 44 it 100/402  loss 0.676  cls 0.184  box 0.328  kps 0.000  npos 1372  141 img/s  lr 4.48e-04
+  ep 44 it 150/402  loss 0.673  cls 0.184  box 0.326  kps 0.000  npos 1375  143 img/s  lr 4.46e-04
+  ep 44 it 200/402  loss 0.674  cls 0.184  box 0.327  kps 0.000  npos 1380  142 img/s  lr 4.43e-04
+  ep 44 it 250/402  loss 0.675  cls 0.185  box 0.327  kps 0.000  npos 1371  143 img/s  lr 4.41e-04
+  ep 44 it 300/402  loss 0.676  cls 0.185  box 0.327  kps 0.000  npos 1370  143 img/s  lr 4.38e-04
+  ep 44 it 350/402  loss 0.676  cls 0.185  box 0.327  kps 0.000  npos 1373  143 img/s  lr 4.36e-04
+  ep 44 it 400/402  loss 0.678  cls 0.185  box 0.328  kps 0.000  npos 1372  144 img/s  lr 4.34e-04
+ep 44/80  recall@0.5 0.239  prec 0.915  npred 5982  ngt 22897  time 1.8min  lr 4.33e-04
+  ep 45 it 50/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1363  138 img/s  lr 4.31e-04
+  ep 45 it 100/402  loss 0.674  cls 0.185  box 0.326  kps 0.000  npos 1354  141 img/s  lr 4.29e-04
+  ep 45 it 150/402  loss 0.681  cls 0.187  box 0.329  kps 0.000  npos 1358  142 img/s  lr 4.26e-04
+  ep 45 it 200/402  loss 0.681  cls 0.188  box 0.328  kps 0.000  npos 1366  142 img/s  lr 4.24e-04
+  ep 45 it 250/402  loss 0.680  cls 0.187  box 0.328  kps 0.000  npos 1366  142 img/s  lr 4.21e-04
+  ep 45 it 300/402  loss 0.677  cls 0.187  box 0.327  kps 0.000  npos 1360  143 img/s  lr 4.19e-04
+  ep 45 it 350/402  loss 0.677  cls 0.186  box 0.327  kps 0.000  npos 1370  143 img/s  lr 4.16e-04
+  ep 45 it 400/402  loss 0.677  cls 0.186  box 0.327  kps 0.000  npos 1370  144 img/s  lr 4.14e-04
+ep 45/80  recall@0.5 0.242  prec 0.898  npred 6179  ngt 22897  time 1.8min  lr 4.14e-04
+  ep 46 it 50/402  loss 0.664  cls 0.181  box 0.321  kps 0.000  npos 1395  138 img/s  lr 4.11e-04
+  ep 46 it 100/402  loss 0.666  cls 0.183  box 0.322  kps 0.000  npos 1363  140 img/s  lr 4.09e-04
+  ep 46 it 150/402  loss 0.665  cls 0.183  box 0.322  kps 0.000  npos 1382  140 img/s  lr 4.06e-04
+  ep 46 it 200/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1376  141 img/s  lr 4.04e-04
+  ep 46 it 250/402  loss 0.668  cls 0.183  box 0.323  kps 0.000  npos 1376  142 img/s  lr 4.02e-04
+  ep 46 it 300/402  loss 0.671  cls 0.184  box 0.325  kps 0.000  npos 1371  142 img/s  lr 3.99e-04
+  ep 46 it 350/402  loss 0.671  cls 0.184  box 0.325  kps 0.000  npos 1366  142 img/s  lr 3.97e-04
+  ep 46 it 400/402  loss 0.672  cls 0.184  box 0.325  kps 0.000  npos 1365  142 img/s  lr 3.94e-04
+ep 46/80  recall@0.5 0.274  prec 0.854  npred 7351  ngt 22897  time 1.9min  lr 3.94e-04
+  -> new best recall 0.2743
+  ep 47 it 50/402  loss 0.671  cls 0.184  box 0.324  kps 0.000  npos 1388  124 img/s  lr 3.92e-04
+  ep 47 it 100/402  loss 0.670  cls 0.184  box 0.324  kps 0.000  npos 1348  129 img/s  lr 3.89e-04
+  ep 47 it 150/402  loss 0.673  cls 0.184  box 0.326  kps 0.000  npos 1360  130 img/s  lr 3.87e-04
+  ep 47 it 200/402  loss 0.672  cls 0.183  box 0.326  kps 0.000  npos 1361  131 img/s  lr 3.85e-04
+  ep 47 it 250/402  loss 0.673  cls 0.184  box 0.326  kps 0.000  npos 1368  131 img/s  lr 3.82e-04
+  ep 47 it 300/402  loss 0.670  cls 0.184  box 0.324  kps 0.000  npos 1363  132 img/s  lr 3.80e-04
+  ep 47 it 350/402  loss 0.670  cls 0.183  box 0.324  kps 0.000  npos 1357  133 img/s  lr 3.77e-04
+  ep 47 it 400/402  loss 0.669  cls 0.183  box 0.324  kps 0.000  npos 1362  133 img/s  lr 3.75e-04
+ep 47/80  recall@0.5 0.275  prec 0.862  npred 7296  ngt 22897  time 2.0min  lr 3.75e-04
+  -> new best recall 0.2746
+  ep 48 it 50/402  loss 0.673  cls 0.184  box 0.326  kps 0.000  npos 1400  131 img/s  lr 3.72e-04
+  ep 48 it 100/402  loss 0.670  cls 0.184  box 0.324  kps 0.000  npos 1367  137 img/s  lr 3.70e-04
+  ep 48 it 150/402  loss 0.676  cls 0.186  box 0.327  kps 0.000  npos 1345  139 img/s  lr 3.68e-04
+  ep 48 it 200/402  loss 0.677  cls 0.185  box 0.328  kps 0.000  npos 1359  139 img/s  lr 3.65e-04
+  ep 48 it 250/402  loss 0.675  cls 0.185  box 0.327  kps 0.000  npos 1357  141 img/s  lr 3.63e-04
+  ep 48 it 300/402  loss 0.673  cls 0.185  box 0.326  kps 0.000  npos 1357  141 img/s  lr 3.60e-04
+  ep 48 it 350/402  loss 0.672  cls 0.184  box 0.325  kps 0.000  npos 1361  140 img/s  lr 3.58e-04
+  ep 48 it 400/402  loss 0.673  cls 0.184  box 0.326  kps 0.000  npos 1364  140 img/s  lr 3.56e-04
+ep 48/80  recall@0.5 0.267  prec 0.875  npred 6987  ngt 22897  time 1.9min  lr 3.56e-04
+  ep 49 it 50/402  loss 0.681  cls 0.189  box 0.328  kps 0.000  npos 1330  135 img/s  lr 3.53e-04
+  ep 49 it 100/402  loss 0.672  cls 0.185  box 0.324  kps 0.000  npos 1334  136 img/s  lr 3.51e-04
+  ep 49 it 150/402  loss 0.670  cls 0.184  box 0.324  kps 0.000  npos 1355  136 img/s  lr 3.49e-04
+  ep 49 it 200/402  loss 0.669  cls 0.184  box 0.323  kps 0.000  npos 1344  136 img/s  lr 3.46e-04
+  ep 49 it 250/402  loss 0.668  cls 0.183  box 0.323  kps 0.000  npos 1358  136 img/s  lr 3.44e-04
+  ep 49 it 300/402  loss 0.668  cls 0.183  box 0.323  kps 0.000  npos 1360  137 img/s  lr 3.41e-04
+  ep 49 it 350/402  loss 0.669  cls 0.184  box 0.323  kps 0.000  npos 1358  138 img/s  lr 3.39e-04
+  ep 49 it 400/402  loss 0.670  cls 0.184  box 0.324  kps 0.000  npos 1361  137 img/s  lr 3.37e-04
+ep 49/80  recall@0.5 0.238  prec 0.922  npred 5915  ngt 22897  time 1.9min  lr 3.37e-04
+  ep 50 it 50/402  loss 0.670  cls 0.182  box 0.326  kps 0.000  npos 1409  111 img/s  lr 3.34e-04
+  ep 50 it 100/402  loss 0.665  cls 0.181  box 0.323  kps 0.000  npos 1368  114 img/s  lr 3.32e-04
+  ep 50 it 150/402  loss 0.674  cls 0.185  box 0.326  kps 0.000  npos 1361  114 img/s  lr 3.30e-04
+  ep 50 it 200/402  loss 0.673  cls 0.184  box 0.325  kps 0.000  npos 1380  114 img/s  lr 3.27e-04
+  ep 50 it 250/402  loss 0.675  cls 0.185  box 0.326  kps 0.000  npos 1374  114 img/s  lr 3.25e-04
+  ep 50 it 300/402  loss 0.672  cls 0.185  box 0.325  kps 0.000  npos 1369  115 img/s  lr 3.23e-04
+  ep 50 it 350/402  loss 0.670  cls 0.184  box 0.324  kps 0.000  npos 1371  115 img/s  lr 3.20e-04
+  ep 50 it 400/402  loss 0.670  cls 0.184  box 0.324  kps 0.000  npos 1367  116 img/s  lr 3.18e-04
+ep 50/80  recall@0.5 0.241  prec 0.916  npred 6024  ngt 22897  time 2.2min  lr 3.18e-04
+  ep 51 it 50/402  loss 0.672  cls 0.184  box 0.325  kps 0.000  npos 1387  112 img/s  lr 3.16e-04
+  ep 51 it 100/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1383  115 img/s  lr 3.13e-04
+  ep 51 it 150/402  loss 0.663  cls 0.181  box 0.322  kps 0.000  npos 1414  116 img/s  lr 3.11e-04
+  ep 51 it 200/402  loss 0.666  cls 0.182  box 0.323  kps 0.000  npos 1403  117 img/s  lr 3.09e-04
+  ep 51 it 250/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1388  116 img/s  lr 3.07e-04
+  ep 51 it 300/402  loss 0.666  cls 0.183  box 0.322  kps 0.000  npos 1376  116 img/s  lr 3.04e-04
+  ep 51 it 350/402  loss 0.666  cls 0.183  box 0.322  kps 0.000  npos 1369  116 img/s  lr 3.02e-04
+  ep 51 it 400/402  loss 0.668  cls 0.183  box 0.323  kps 0.000  npos 1372  116 img/s  lr 3.00e-04
+ep 51/80  recall@0.5 0.246  prec 0.905  npred 6234  ngt 22897  time 2.2min  lr 3.00e-04
+  ep 52 it 50/402  loss 0.672  cls 0.185  box 0.325  kps 0.000  npos 1315  113 img/s  lr 2.97e-04
+  ep 52 it 100/402  loss 0.674  cls 0.185  box 0.326  kps 0.000  npos 1336  116 img/s  lr 2.95e-04
+  ep 52 it 150/402  loss 0.669  cls 0.183  box 0.325  kps 0.000  npos 1361  116 img/s  lr 2.93e-04
+  ep 52 it 200/402  loss 0.671  cls 0.183  box 0.325  kps 0.000  npos 1355  116 img/s  lr 2.91e-04
+  ep 52 it 250/402  loss 0.670  cls 0.183  box 0.325  kps 0.000  npos 1354  117 img/s  lr 2.88e-04
+  ep 52 it 300/402  loss 0.669  cls 0.183  box 0.324  kps 0.000  npos 1358  117 img/s  lr 2.86e-04
+  ep 52 it 350/402  loss 0.667  cls 0.182  box 0.323  kps 0.000  npos 1354  118 img/s  lr 2.84e-04
+  ep 52 it 400/402  loss 0.668  cls 0.182  box 0.324  kps 0.000  npos 1360  118 img/s  lr 2.82e-04
+ep 52/80  recall@0.5 0.265  prec 0.879  npred 6904  ngt 22897  time 2.2min  lr 2.82e-04
+  ep 53 it 50/402  loss 0.660  cls 0.181  box 0.319  kps 0.000  npos 1319  115 img/s  lr 2.79e-04
+  ep 53 it 100/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1326  118 img/s  lr 2.77e-04
+  ep 53 it 150/402  loss 0.669  cls 0.184  box 0.323  kps 0.000  npos 1338  118 img/s  lr 2.75e-04
+  ep 53 it 200/402  loss 0.665  cls 0.183  box 0.321  kps 0.000  npos 1339  119 img/s  lr 2.73e-04
+  ep 53 it 250/402  loss 0.666  cls 0.183  box 0.322  kps 0.000  npos 1355  120 img/s  lr 2.70e-04
+  ep 53 it 300/402  loss 0.666  cls 0.183  box 0.322  kps 0.000  npos 1361  120 img/s  lr 2.68e-04
+  ep 53 it 350/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1357  120 img/s  lr 2.66e-04
+  ep 53 it 400/402  loss 0.664  cls 0.182  box 0.321  kps 0.000  npos 1355  119 img/s  lr 2.64e-04
+ep 53/80  recall@0.5 0.247  prec 0.914  npred 6198  ngt 22897  time 2.2min  lr 2.64e-04
+  ep 54 it 50/402  loss 0.658  cls 0.180  box 0.319  kps 0.000  npos 1358  115 img/s  lr 2.62e-04
+  ep 54 it 100/402  loss 0.665  cls 0.181  box 0.323  kps 0.000  npos 1400  118 img/s  lr 2.59e-04
+  ep 54 it 150/402  loss 0.667  cls 0.183  box 0.322  kps 0.000  npos 1394  118 img/s  lr 2.57e-04
+  ep 54 it 200/402  loss 0.666  cls 0.183  box 0.322  kps 0.000  npos 1389  117 img/s  lr 2.55e-04
+  ep 54 it 250/402  loss 0.665  cls 0.183  box 0.321  kps 0.000  npos 1380  117 img/s  lr 2.53e-04
+  ep 54 it 300/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1381  117 img/s  lr 2.51e-04
+  ep 54 it 350/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1385  117 img/s  lr 2.49e-04
+  ep 54 it 400/402  loss 0.664  cls 0.182  box 0.321  kps 0.000  npos 1379  117 img/s  lr 2.47e-04
+ep 54/80  recall@0.5 0.247  prec 0.909  npred 6222  ngt 22897  time 2.2min  lr 2.46e-04
+  ep 55 it 50/402  loss 0.679  cls 0.188  box 0.327  kps 0.000  npos 1303  113 img/s  lr 2.44e-04
+  ep 55 it 100/402  loss 0.679  cls 0.186  box 0.328  kps 0.000  npos 1352  115 img/s  lr 2.42e-04
+  ep 55 it 150/402  loss 0.675  cls 0.185  box 0.327  kps 0.000  npos 1369  116 img/s  lr 2.40e-04
+  ep 55 it 200/402  loss 0.672  cls 0.184  box 0.325  kps 0.000  npos 1376  118 img/s  lr 2.38e-04
+  ep 55 it 250/402  loss 0.667  cls 0.183  box 0.323  kps 0.000  npos 1357  118 img/s  lr 2.36e-04
+  ep 55 it 300/402  loss 0.667  cls 0.183  box 0.323  kps 0.000  npos 1365  118 img/s  lr 2.34e-04
+  ep 55 it 350/402  loss 0.664  cls 0.182  box 0.322  kps 0.000  npos 1361  118 img/s  lr 2.32e-04
+  ep 55 it 400/402  loss 0.664  cls 0.181  box 0.322  kps 0.000  npos 1362  118 img/s  lr 2.30e-04
+ep 55/80  recall@0.5 0.265  prec 0.885  npred 6858  ngt 22897  time 2.2min  lr 2.30e-04
+  ep 56 it 50/402  loss 0.659  cls 0.180  box 0.319  kps 0.000  npos 1386  111 img/s  lr 2.27e-04
+  ep 56 it 100/402  loss 0.666  cls 0.181  box 0.323  kps 0.000  npos 1406  114 img/s  lr 2.25e-04
+  ep 56 it 150/402  loss 0.665  cls 0.181  box 0.323  kps 0.000  npos 1393  115 img/s  lr 2.23e-04
+  ep 56 it 200/402  loss 0.664  cls 0.181  box 0.322  kps 0.000  npos 1383  115 img/s  lr 2.21e-04
+  ep 56 it 250/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1376  116 img/s  lr 2.19e-04
+  ep 56 it 300/402  loss 0.662  cls 0.181  box 0.321  kps 0.000  npos 1376  116 img/s  lr 2.17e-04
+  ep 56 it 350/402  loss 0.663  cls 0.181  box 0.322  kps 0.000  npos 1373  116 img/s  lr 2.15e-04
+  ep 56 it 400/402  loss 0.664  cls 0.181  box 0.322  kps 0.000  npos 1372  116 img/s  lr 2.13e-04
+ep 56/80  recall@0.5 0.251  prec 0.905  npred 6348  ngt 22897  time 2.2min  lr 2.13e-04
+  ep 57 it 50/402  loss 0.677  cls 0.187  box 0.327  kps 0.000  npos 1354  114 img/s  lr 2.11e-04
+  ep 57 it 100/402  loss 0.671  cls 0.185  box 0.324  kps 0.000  npos 1354  119 img/s  lr 2.09e-04
+  ep 57 it 150/402  loss 0.671  cls 0.183  box 0.325  kps 0.000  npos 1374  125 img/s  lr 2.07e-04
+  ep 57 it 200/402  loss 0.665  cls 0.181  box 0.322  kps 0.000  npos 1381  129 img/s  lr 2.05e-04
+  ep 57 it 250/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1379  132 img/s  lr 2.03e-04
+  ep 57 it 300/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1377  134 img/s  lr 2.01e-04
+  ep 57 it 350/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1371  135 img/s  lr 1.99e-04
+  ep 57 it 400/402  loss 0.665  cls 0.182  box 0.322  kps 0.000  npos 1367  136 img/s  lr 1.97e-04
+ep 57/80  recall@0.5 0.255  prec 0.895  npred 6534  ngt 22897  time 1.9min  lr 1.97e-04
+  ep 58 it 50/402  loss 0.663  cls 0.184  box 0.319  kps 0.000  npos 1330  130 img/s  lr 1.95e-04
+  ep 58 it 100/402  loss 0.666  cls 0.184  box 0.322  kps 0.000  npos 1345  134 img/s  lr 1.93e-04
+  ep 58 it 150/402  loss 0.663  cls 0.183  box 0.320  kps 0.000  npos 1359  137 img/s  lr 1.91e-04
+  ep 58 it 200/402  loss 0.664  cls 0.183  box 0.321  kps 0.000  npos 1359  137 img/s  lr 1.89e-04
+  ep 58 it 250/402  loss 0.663  cls 0.182  box 0.320  kps 0.000  npos 1365  138 img/s  lr 1.87e-04
+  ep 58 it 300/402  loss 0.663  cls 0.182  box 0.321  kps 0.000  npos 1369  137 img/s  lr 1.85e-04
+  ep 58 it 350/402  loss 0.664  cls 0.182  box 0.321  kps 0.000  npos 1369  136 img/s  lr 1.83e-04
+  ep 58 it 400/402  loss 0.664  cls 0.182  box 0.321  kps 0.000  npos 1362  136 img/s  lr 1.81e-04
+ep 58/80  recall@0.5 0.258  prec 0.895  npred 6606  ngt 22897  time 1.9min  lr 1.81e-04
+  ep 59 it 50/402  loss 0.673  cls 0.183  box 0.327  kps 0.000  npos 1330  111 img/s  lr 1.79e-04
+  ep 59 it 100/402  loss 0.664  cls 0.182  box 0.321  kps 0.000  npos 1345  114 img/s  lr 1.78e-04
+  ep 59 it 150/402  loss 0.662  cls 0.182  box 0.320  kps 0.000  npos 1337  114 img/s  lr 1.76e-04
+  ep 59 it 200/402  loss 0.662  cls 0.181  box 0.320  kps 0.000  npos 1349  115 img/s  lr 1.74e-04
+  ep 59 it 250/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1344  115 img/s  lr 1.72e-04
+  ep 59 it 300/402  loss 0.662  cls 0.182  box 0.320  kps 0.000  npos 1345  115 img/s  lr 1.70e-04
+  ep 59 it 350/402  loss 0.660  cls 0.181  box 0.319  kps 0.000  npos 1348  115 img/s  lr 1.68e-04
+  ep 59 it 400/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1349  115 img/s  lr 1.66e-04
+ep 59/80  recall@0.5 0.268  prec 0.882  npred 6949  ngt 22897  time 2.2min  lr 1.66e-04
+  ep 60 it 50/402  loss 0.665  cls 0.181  box 0.323  kps 0.000  npos 1337  110 img/s  lr 1.64e-04
+  ep 60 it 100/402  loss 0.667  cls 0.182  box 0.323  kps 0.000  npos 1356  113 img/s  lr 1.63e-04
+  ep 60 it 150/402  loss 0.667  cls 0.183  box 0.323  kps 0.000  npos 1341  115 img/s  lr 1.61e-04
+  ep 60 it 200/402  loss 0.664  cls 0.182  box 0.321  kps 0.000  npos 1347  116 img/s  lr 1.59e-04
+  ep 60 it 250/402  loss 0.662  cls 0.182  box 0.320  kps 0.000  npos 1362  116 img/s  lr 1.57e-04
+  ep 60 it 300/402  loss 0.662  cls 0.182  box 0.320  kps 0.000  npos 1354  116 img/s  lr 1.55e-04
+  ep 60 it 350/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1357  116 img/s  lr 1.54e-04
+  ep 60 it 400/402  loss 0.663  cls 0.182  box 0.321  kps 0.000  npos 1363  117 img/s  lr 1.52e-04
+ep 60/80  recall@0.5 0.252  prec 0.903  npred 6392  ngt 22897  time 2.2min  lr 1.52e-04
+  ep 61 it 50/402  loss 0.674  cls 0.182  box 0.328  kps 0.000  npos 1400  110 img/s  lr 1.50e-04
+  ep 61 it 100/402  loss 0.675  cls 0.184  box 0.327  kps 0.000  npos 1393  114 img/s  lr 1.48e-04
+  ep 61 it 150/402  loss 0.668  cls 0.182  box 0.324  kps 0.000  npos 1377  115 img/s  lr 1.46e-04
+  ep 61 it 200/402  loss 0.668  cls 0.182  box 0.324  kps 0.000  npos 1376  116 img/s  lr 1.45e-04
+  ep 61 it 250/402  loss 0.662  cls 0.181  box 0.321  kps 0.000  npos 1369  116 img/s  lr 1.43e-04
+  ep 61 it 300/402  loss 0.662  cls 0.182  box 0.321  kps 0.000  npos 1359  117 img/s  lr 1.41e-04
+  ep 61 it 350/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1365  117 img/s  lr 1.40e-04
+  ep 61 it 400/402  loss 0.663  cls 0.182  box 0.321  kps 0.000  npos 1365  118 img/s  lr 1.38e-04
+ep 61/80  recall@0.5 0.256  prec 0.899  npred 6517  ngt 22897  time 2.2min  lr 1.38e-04
+  ep 62 it 50/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1352  113 img/s  lr 1.36e-04
+  ep 62 it 100/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1354  117 img/s  lr 1.34e-04
+  ep 62 it 150/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1357  119 img/s  lr 1.33e-04
+  ep 62 it 200/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1364  119 img/s  lr 1.31e-04
+  ep 62 it 250/402  loss 0.659  cls 0.180  box 0.319  kps 0.000  npos 1371  119 img/s  lr 1.29e-04
+  ep 62 it 300/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1370  120 img/s  lr 1.28e-04
+  ep 62 it 350/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1367  120 img/s  lr 1.26e-04
+  ep 62 it 400/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1363  120 img/s  lr 1.24e-04
+ep 62/80  recall@0.5 0.256  prec 0.901  npred 6520  ngt 22897  time 2.2min  lr 1.24e-04
+  ep 63 it 50/402  loss 0.656  cls 0.180  box 0.318  kps 0.000  npos 1365  115 img/s  lr 1.23e-04
+  ep 63 it 100/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1339  117 img/s  lr 1.21e-04
+  ep 63 it 150/402  loss 0.652  cls 0.178  box 0.316  kps 0.000  npos 1360  118 img/s  lr 1.20e-04
+  ep 63 it 200/402  loss 0.653  cls 0.178  box 0.316  kps 0.000  npos 1355  118 img/s  lr 1.18e-04
+  ep 63 it 250/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1349  119 img/s  lr 1.16e-04
+  ep 63 it 300/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1347  118 img/s  lr 1.15e-04
+  ep 63 it 350/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1356  118 img/s  lr 1.13e-04
+  ep 63 it 400/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1356  118 img/s  lr 1.12e-04
+ep 63/80  recall@0.5 0.268  prec 0.886  npred 6932  ngt 22897  time 2.2min  lr 1.12e-04
+  ep 64 it 50/402  loss 0.658  cls 0.183  box 0.316  kps 0.000  npos 1310  112 img/s  lr 1.10e-04
+  ep 64 it 100/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1336  114 img/s  lr 1.08e-04
+  ep 64 it 150/402  loss 0.658  cls 0.180  box 0.318  kps 0.000  npos 1341  115 img/s  lr 1.07e-04
+  ep 64 it 200/402  loss 0.658  cls 0.180  box 0.319  kps 0.000  npos 1340  116 img/s  lr 1.05e-04
+  ep 64 it 250/402  loss 0.656  cls 0.180  box 0.317  kps 0.000  npos 1347  116 img/s  lr 1.04e-04
+  ep 64 it 300/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1349  116 img/s  lr 1.02e-04
+  ep 64 it 350/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1355  116 img/s  lr 1.01e-04
+  ep 64 it 400/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1359  116 img/s  lr 9.94e-05
+ep 64/80  recall@0.5 0.263  prec 0.893  npred 6732  ngt 22897  time 2.2min  lr 9.94e-05
+  ep 65 it 50/402  loss 0.650  cls 0.176  box 0.316  kps 0.000  npos 1394  110 img/s  lr 9.79e-05
+  ep 65 it 100/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1374  113 img/s  lr 9.64e-05
+  ep 65 it 150/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1359  114 img/s  lr 9.50e-05
+  ep 65 it 200/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1360  115 img/s  lr 9.35e-05
+  ep 65 it 250/402  loss 0.660  cls 0.180  box 0.319  kps 0.000  npos 1362  116 img/s  lr 9.21e-05
+  ep 65 it 300/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1369  116 img/s  lr 9.07e-05
+  ep 65 it 350/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1368  117 img/s  lr 8.93e-05
+  ep 65 it 400/402  loss 0.659  cls 0.180  box 0.319  kps 0.000  npos 1367  117 img/s  lr 8.79e-05
+ep 65/80  recall@0.5 0.260  prec 0.900  npred 6603  ngt 22897  time 2.2min  lr 8.78e-05
+  ep 66 it 50/402  loss 0.651  cls 0.179  box 0.314  kps 0.000  npos 1391  110 img/s  lr 8.64e-05
+  ep 66 it 100/402  loss 0.647  cls 0.178  box 0.313  kps 0.000  npos 1385  115 img/s  lr 8.50e-05
+  ep 66 it 150/402  loss 0.647  cls 0.177  box 0.313  kps 0.000  npos 1392  116 img/s  lr 8.37e-05
+  ep 66 it 200/402  loss 0.651  cls 0.179  box 0.315  kps 0.000  npos 1367  120 img/s  lr 8.23e-05
+  ep 66 it 250/402  loss 0.654  cls 0.179  box 0.316  kps 0.000  npos 1373  123 img/s  lr 8.10e-05
+  ep 66 it 300/402  loss 0.655  cls 0.179  box 0.317  kps 0.000  npos 1371  125 img/s  lr 7.96e-05
+  ep 66 it 350/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1365  125 img/s  lr 7.83e-05
+  ep 66 it 400/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1371  127 img/s  lr 7.70e-05
+ep 66/80  recall@0.5 0.267  prec 0.890  npred 6883  ngt 22897  time 2.0min  lr 7.69e-05
+  ep 67 it 50/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1389  127 img/s  lr 7.56e-05
+  ep 67 it 100/402  loss 0.665  cls 0.181  box 0.323  kps 0.000  npos 1357  133 img/s  lr 7.43e-05
+  ep 67 it 150/402  loss 0.662  cls 0.180  box 0.321  kps 0.000  npos 1363  134 img/s  lr 7.30e-05
+  ep 67 it 200/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1365  134 img/s  lr 7.17e-05
+  ep 67 it 250/402  loss 0.656  cls 0.179  box 0.318  kps 0.000  npos 1366  135 img/s  lr 7.05e-05
+  ep 67 it 300/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1363  135 img/s  lr 6.92e-05
+  ep 67 it 350/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1356  135 img/s  lr 6.80e-05
+  ep 67 it 400/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1358  135 img/s  lr 6.67e-05
+ep 67/80  recall@0.5 0.249  prec 0.914  npred 6240  ngt 22897  time 1.9min  lr 6.67e-05
+  ep 68 it 50/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1373  123 img/s  lr 6.55e-05
+  ep 68 it 100/402  loss 0.660  cls 0.181  box 0.320  kps 0.000  npos 1346  129 img/s  lr 6.43e-05
+  ep 68 it 150/402  loss 0.664  cls 0.182  box 0.321  kps 0.000  npos 1357  132 img/s  lr 6.31e-05
+  ep 68 it 200/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1362  132 img/s  lr 6.19e-05
+  ep 68 it 250/402  loss 0.658  cls 0.179  box 0.319  kps 0.000  npos 1365  132 img/s  lr 6.07e-05
+  ep 68 it 300/402  loss 0.656  cls 0.179  box 0.318  kps 0.000  npos 1366  132 img/s  lr 5.95e-05
+  ep 68 it 350/402  loss 0.656  cls 0.179  box 0.318  kps 0.000  npos 1365  133 img/s  lr 5.84e-05
+  ep 68 it 400/402  loss 0.658  cls 0.180  box 0.319  kps 0.000  npos 1368  134 img/s  lr 5.72e-05
+ep 68/80  recall@0.5 0.258  prec 0.904  npred 6531  ngt 22897  time 2.0min  lr 5.72e-05
+  ep 69 it 50/402  loss 0.652  cls 0.178  box 0.316  kps 0.000  npos 1323  124 img/s  lr 5.60e-05
+  ep 69 it 100/402  loss 0.648  cls 0.177  box 0.314  kps 0.000  npos 1341  131 img/s  lr 5.49e-05
+  ep 69 it 150/402  loss 0.652  cls 0.178  box 0.316  kps 0.000  npos 1356  132 img/s  lr 5.38e-05
+  ep 69 it 200/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1361  133 img/s  lr 5.27e-05
+  ep 69 it 250/402  loss 0.654  cls 0.178  box 0.318  kps 0.000  npos 1354  133 img/s  lr 5.16e-05
+  ep 69 it 300/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1356  134 img/s  lr 5.05e-05
+  ep 69 it 350/402  loss 0.653  cls 0.178  box 0.317  kps 0.000  npos 1360  134 img/s  lr 4.94e-05
+  ep 69 it 400/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1361  134 img/s  lr 4.84e-05
+ep 69/80  recall@0.5 0.265  prec 0.891  npred 6809  ngt 22897  time 2.0min  lr 4.83e-05
+  ep 70 it 50/402  loss 0.657  cls 0.182  box 0.316  kps 0.000  npos 1319  129 img/s  lr 4.73e-05
+  ep 70 it 100/402  loss 0.658  cls 0.181  box 0.318  kps 0.000  npos 1318  132 img/s  lr 4.63e-05
+  ep 70 it 150/402  loss 0.653  cls 0.179  box 0.316  kps 0.000  npos 1361  133 img/s  lr 4.52e-05
+  ep 70 it 200/402  loss 0.656  cls 0.180  box 0.317  kps 0.000  npos 1357  133 img/s  lr 4.42e-05
+  ep 70 it 250/402  loss 0.656  cls 0.180  box 0.317  kps 0.000  npos 1364  133 img/s  lr 4.32e-05
+  ep 70 it 300/402  loss 0.656  cls 0.179  box 0.318  kps 0.000  npos 1357  134 img/s  lr 4.22e-05
+  ep 70 it 350/402  loss 0.655  cls 0.180  box 0.317  kps 0.000  npos 1355  134 img/s  lr 4.12e-05
+  ep 70 it 400/402  loss 0.656  cls 0.179  box 0.317  kps 0.000  npos 1362  134 img/s  lr 4.03e-05
+ep 70/80  recall@0.5 0.266  prec 0.889  npred 6849  ngt 22897  time 1.9min  lr 4.02e-05
+  ep 71 it 50/402  loss 0.678  cls 0.187  box 0.327  kps 0.000  npos 1332  126 img/s  lr 3.93e-05
+  ep 71 it 100/402  loss 0.664  cls 0.183  box 0.321  kps 0.000  npos 1330  130 img/s  lr 3.83e-05
+  ep 71 it 150/402  loss 0.666  cls 0.183  box 0.322  kps 0.000  npos 1342  131 img/s  lr 3.74e-05
+  ep 71 it 200/402  loss 0.660  cls 0.181  box 0.319  kps 0.000  npos 1335  132 img/s  lr 3.65e-05
+  ep 71 it 250/402  loss 0.659  cls 0.181  box 0.319  kps 0.000  npos 1353  132 img/s  lr 3.56e-05
+  ep 71 it 300/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1349  133 img/s  lr 3.47e-05
+  ep 71 it 350/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1361  133 img/s  lr 3.38e-05
+  ep 71 it 400/402  loss 0.656  cls 0.180  box 0.318  kps 0.000  npos 1357  134 img/s  lr 3.29e-05
+ep 71/80  recall@0.5 0.261  prec 0.898  npred 6650  ngt 22897  time 1.9min  lr 3.29e-05
+  ep 72 it 50/402  loss 0.664  cls 0.180  box 0.323  kps 0.000  npos 1310  129 img/s  lr 3.20e-05
+  ep 72 it 100/402  loss 0.662  cls 0.180  box 0.321  kps 0.000  npos 1338  132 img/s  lr 3.11e-05
+  ep 72 it 150/402  loss 0.656  cls 0.179  box 0.317  kps 0.000  npos 1346  132 img/s  lr 3.03e-05
+  ep 72 it 200/402  loss 0.656  cls 0.179  box 0.318  kps 0.000  npos 1347  133 img/s  lr 2.95e-05
+  ep 72 it 250/402  loss 0.657  cls 0.179  box 0.318  kps 0.000  npos 1354  133 img/s  lr 2.87e-05
+  ep 72 it 300/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1353  133 img/s  lr 2.78e-05
+  ep 72 it 350/402  loss 0.653  cls 0.178  box 0.317  kps 0.000  npos 1354  133 img/s  lr 2.70e-05
+  ep 72 it 400/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1353  132 img/s  lr 2.63e-05
+ep 72/80  recall@0.5 0.256  prec 0.906  npred 6480  ngt 22897  time 2.0min  lr 2.62e-05
+  ep 73 it 50/402  loss 0.646  cls 0.176  box 0.313  kps 0.000  npos 1350  125 img/s  lr 2.55e-05
+  ep 73 it 100/402  loss 0.652  cls 0.178  box 0.316  kps 0.000  npos 1372  129 img/s  lr 2.47e-05
+  ep 73 it 150/402  loss 0.655  cls 0.179  box 0.317  kps 0.000  npos 1378  130 img/s  lr 2.40e-05
+  ep 73 it 200/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1369  131 img/s  lr 2.32e-05
+  ep 73 it 250/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1363  131 img/s  lr 2.25e-05
+  ep 73 it 300/402  loss 0.653  cls 0.179  box 0.316  kps 0.000  npos 1368  132 img/s  lr 2.18e-05
+  ep 73 it 350/402  loss 0.656  cls 0.180  box 0.318  kps 0.000  npos 1366  133 img/s  lr 2.11e-05
+  ep 73 it 400/402  loss 0.656  cls 0.180  box 0.318  kps 0.000  npos 1366  133 img/s  lr 2.04e-05
+ep 73/80  recall@0.5 0.253  prec 0.909  npred 6370  ngt 22897  time 2.0min  lr 2.04e-05
+  ep 74 it 50/402  loss 0.651  cls 0.175  box 0.318  kps 0.000  npos 1379  124 img/s  lr 1.97e-05
+  ep 74 it 100/402  loss 0.652  cls 0.177  box 0.317  kps 0.000  npos 1370  128 img/s  lr 1.90e-05
+  ep 74 it 150/402  loss 0.650  cls 0.177  box 0.316  kps 0.000  npos 1353  129 img/s  lr 1.84e-05
+  ep 74 it 200/402  loss 0.650  cls 0.177  box 0.316  kps 0.000  npos 1349  130 img/s  lr 1.77e-05
+  ep 74 it 250/402  loss 0.654  cls 0.178  box 0.318  kps 0.000  npos 1365  131 img/s  lr 1.71e-05
+  ep 74 it 300/402  loss 0.655  cls 0.178  box 0.318  kps 0.000  npos 1369  132 img/s  lr 1.65e-05
+  ep 74 it 350/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1373  132 img/s  lr 1.59e-05
+  ep 74 it 400/402  loss 0.655  cls 0.179  box 0.318  kps 0.000  npos 1370  132 img/s  lr 1.53e-05
+ep 74/80  recall@0.5 0.262  prec 0.898  npred 6678  ngt 22897  time 2.0min  lr 1.53e-05
+  ep 75 it 50/402  loss 0.645  cls 0.177  box 0.312  kps 0.000  npos 1390  127 img/s  lr 1.47e-05
+  ep 75 it 100/402  loss 0.653  cls 0.180  box 0.315  kps 0.000  npos 1350  132 img/s  lr 1.41e-05
+  ep 75 it 150/402  loss 0.652  cls 0.179  box 0.315  kps 0.000  npos 1342  131 img/s  lr 1.35e-05
+  ep 75 it 200/402  loss 0.652  cls 0.179  box 0.315  kps 0.000  npos 1334  133 img/s  lr 1.30e-05
+  ep 75 it 250/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1350  133 img/s  lr 1.25e-05
+  ep 75 it 300/402  loss 0.653  cls 0.178  box 0.316  kps 0.000  npos 1358  133 img/s  lr 1.19e-05
+  ep 75 it 350/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1357  133 img/s  lr 1.14e-05
+  ep 75 it 400/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1358  133 img/s  lr 1.09e-05
+ep 75/80  recall@0.5 0.260  prec 0.901  npred 6607  ngt 22897  time 2.0min  lr 1.09e-05
+  ep 76 it 50/402  loss 0.652  cls 0.179  box 0.315  kps 0.000  npos 1344  126 img/s  lr 1.04e-05
+  ep 76 it 100/402  loss 0.649  cls 0.177  box 0.314  kps 0.000  npos 1340  130 img/s  lr 9.95e-06
+  ep 76 it 150/402  loss 0.649  cls 0.178  box 0.315  kps 0.000  npos 1344  132 img/s  lr 9.49e-06
+  ep 76 it 200/402  loss 0.647  cls 0.176  box 0.314  kps 0.000  npos 1345  132 img/s  lr 9.04e-06
+  ep 76 it 250/402  loss 0.652  cls 0.177  box 0.316  kps 0.000  npos 1356  133 img/s  lr 8.61e-06
+  ep 76 it 300/402  loss 0.652  cls 0.178  box 0.316  kps 0.000  npos 1353  133 img/s  lr 8.18e-06
+  ep 76 it 350/402  loss 0.651  cls 0.178  box 0.316  kps 0.000  npos 1356  133 img/s  lr 7.77e-06
+  ep 76 it 400/402  loss 0.651  cls 0.177  box 0.316  kps 0.000  npos 1358  133 img/s  lr 7.37e-06
+ep 76/80  recall@0.5 0.256  prec 0.903  npred 6481  ngt 22897  time 2.0min  lr 7.35e-06
+  ep 77 it 50/402  loss 0.656  cls 0.180  box 0.318  kps 0.000  npos 1339  127 img/s  lr 6.96e-06
+  ep 77 it 100/402  loss 0.660  cls 0.180  box 0.320  kps 0.000  npos 1351  131 img/s  lr 6.59e-06
+  ep 77 it 150/402  loss 0.658  cls 0.180  box 0.319  kps 0.000  npos 1357  133 img/s  lr 6.23e-06
+  ep 77 it 200/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1356  132 img/s  lr 5.87e-06
+  ep 77 it 250/402  loss 0.657  cls 0.179  box 0.318  kps 0.000  npos 1363  133 img/s  lr 5.53e-06
+  ep 77 it 300/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1358  134 img/s  lr 5.21e-06
+  ep 77 it 350/402  loss 0.654  cls 0.178  box 0.317  kps 0.000  npos 1358  133 img/s  lr 4.89e-06
+  ep 77 it 400/402  loss 0.653  cls 0.178  box 0.317  kps 0.000  npos 1361  133 img/s  lr 4.59e-06
+ep 77/80  recall@0.5 0.258  prec 0.902  npred 6550  ngt 22897  time 1.9min  lr 4.58e-06
+  ep 78 it 50/402  loss 0.663  cls 0.181  box 0.321  kps 0.000  npos 1322  124 img/s  lr 4.29e-06
+  ep 78 it 100/402  loss 0.655  cls 0.180  box 0.317  kps 0.000  npos 1354  128 img/s  lr 4.01e-06
+  ep 78 it 150/402  loss 0.657  cls 0.179  box 0.318  kps 0.000  npos 1362  129 img/s  lr 3.74e-06
+  ep 78 it 200/402  loss 0.652  cls 0.178  box 0.316  kps 0.000  npos 1352  131 img/s  lr 3.49e-06
+  ep 78 it 250/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1365  131 img/s  lr 3.25e-06
+  ep 78 it 300/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1365  131 img/s  lr 3.02e-06
+  ep 78 it 350/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1372  131 img/s  lr 2.81e-06
+  ep 78 it 400/402  loss 0.654  cls 0.179  box 0.316  kps 0.000  npos 1367  132 img/s  lr 2.60e-06
+ep 78/80  recall@0.5 0.256  prec 0.904  npred 6496  ngt 22897  time 2.0min  lr 2.59e-06
+  ep 79 it 50/402  loss 0.640  cls 0.174  box 0.311  kps 0.000  npos 1376  129 img/s  lr 2.40e-06
+  ep 79 it 100/402  loss 0.655  cls 0.179  box 0.317  kps 0.000  npos 1393  130 img/s  lr 2.22e-06
+  ep 79 it 150/402  loss 0.654  cls 0.179  box 0.316  kps 0.000  npos 1367  132 img/s  lr 2.05e-06
+  ep 79 it 200/402  loss 0.653  cls 0.179  box 0.316  kps 0.000  npos 1377  133 img/s  lr 1.90e-06
+  ep 79 it 250/402  loss 0.652  cls 0.178  box 0.316  kps 0.000  npos 1376  133 img/s  lr 1.76e-06
+  ep 79 it 300/402  loss 0.656  cls 0.179  box 0.318  kps 0.000  npos 1372  134 img/s  lr 1.63e-06
+  ep 79 it 350/402  loss 0.657  cls 0.179  box 0.318  kps 0.000  npos 1373  134 img/s  lr 1.51e-06
+  ep 79 it 400/402  loss 0.656  cls 0.178  box 0.318  kps 0.000  npos 1375  134 img/s  lr 1.40e-06
+ep 79/80  recall@0.5 0.258  prec 0.905  npred 6522  ngt 22897  time 1.9min  lr 1.40e-06
+  ep 80 it 50/402  loss 0.651  cls 0.179  box 0.315  kps 0.000  npos 1409  130 img/s  lr 1.31e-06
+  ep 80 it 100/402  loss 0.658  cls 0.179  box 0.319  kps 0.000  npos 1384  132 img/s  lr 1.23e-06
+  ep 80 it 150/402  loss 0.660  cls 0.181  box 0.320  kps 0.000  npos 1378  135 img/s  lr 1.16e-06
+  ep 80 it 200/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1379  135 img/s  lr 1.10e-06
+  ep 80 it 250/402  loss 0.661  cls 0.181  box 0.320  kps 0.000  npos 1372  136 img/s  lr 1.06e-06
+  ep 80 it 300/402  loss 0.659  cls 0.180  box 0.319  kps 0.000  npos 1363  136 img/s  lr 1.03e-06
+  ep 80 it 350/402  loss 0.657  cls 0.180  box 0.318  kps 0.000  npos 1370  135 img/s  lr 1.01e-06
+  ep 80 it 400/402  loss 0.654  cls 0.179  box 0.317  kps 0.000  npos 1365  136 img/s  lr 1.00e-06
+ep 80/80  recall@0.5 0.254  prec 0.908  npred 6418  ngt 22897  time 1.9min  lr 1.00e-06

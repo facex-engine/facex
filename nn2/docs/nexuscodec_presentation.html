@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NexusCodec — Full H.265 Video Stack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --blue: #1a56db;
+    --blue-light: #e8effc;
+    --blue-mid: #3b7ddd;
+    --dark: #111827;
+    --gray-800: #1f2937;
+    --gray-600: #4b5563;
+    --gray-400: #9ca3af;
+    --gray-200: #e5e7eb;
+    --gray-100: #f3f4f6;
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+    --green: #059669;
+    --green-bg: #ecfdf5;
+    --amber: #d97706;
+    --amber-bg: #fffbeb;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    color: var(--dark);
+    background: #fff;
+    font-size: 11pt;
+    line-height: 1.55;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 28mm 24mm 20mm;
+    margin: 0 auto;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .page:last-child { page-break-after: avoid; }
+
+  @media screen {
+    .page {
+      margin: 20px auto;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+      border: 1px solid var(--gray-200);
+    }
+  }
+
+  /* Page footer */
+  .page::after {
+    content: attr(data-footer);
+    position: absolute;
+    bottom: 12mm;
+    left: 24mm;
+    right: 24mm;
+    font-size: 7.5pt;
+    color: var(--gray-400);
+    border-top: 1px solid var(--gray-200);
+    padding-top: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .page-num {
+    position: absolute;
+    bottom: 12mm;
+    right: 24mm;
+    font-size: 7.5pt;
+    color: var(--gray-400);
+  }
+
+  /* Typography */
+  h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 32pt;
+    font-weight: 400;
+    line-height: 1.15;
+    color: var(--dark);
+    letter-spacing: -0.5px;
+  }
+
+  h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 18pt;
+    font-weight: 400;
+    color: var(--dark);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--blue);
+    display: inline-block;
+  }
+
+  h3 {
+    font-size: 11pt;
+    font-weight: 700;
+    color: var(--gray-800);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-size: 8.5pt;
+  }
+
+  p { margin-bottom: 10px; color: var(--gray-600); }
+  strong { color: var(--dark); font-weight: 600; }
+
+  /* Cover page */
+  .cover {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 40mm 28mm;
+  }
+
+  .cover-badge {
+    display: inline-block;
+    background: var(--blue);
+    color: #fff;
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 16px;
+    border-radius: 2px;
+    margin-bottom: 24px;
+    width: fit-content;
+  }
+
+  .cover h1 {
+    font-size: 42pt;
+    margin-bottom: 12px;
+  }
+
+  .cover h1 span { color: var(--blue); }
+
+  .cover-subtitle {
+    font-size: 16pt;
+    color: var(--gray-600);
+    font-weight: 400;
+    margin-bottom: 48px;
+    max-width: 380px;
+  }
+
+  .cover-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+    border-top: 1px solid var(--gray-200);
+    padding-top: 24px;
+    margin-top: auto;
+  }
+
+  .cover-meta-item {
+    font-size: 8.5pt;
+    color: var(--gray-400);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .cover-meta-item span {
+    display: block;
+    font-size: 11pt;
+    color: var(--dark);
+    font-weight: 600;
+    margin-top: 4px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  .cover-line {
+    width: 64px;
+    height: 4px;
+    background: var(--blue);
+    margin-bottom: 28px;
+  }
+
+  /* Content elements */
+  .section-label {
+    font-size: 8pt;
+    font-weight: 700;
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+
+  /* Cards */
+  .card-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 16px 0;
+  }
+
+  .card {
+    background: var(--gray-100);
+    border-radius: 6px;
+    padding: 18px 20px;
+    border-left: 3px solid var(--blue);
+  }
+
+  .card.red { background: var(--red-bg); border-left-color: var(--red); }
+  .card.green { background: var(--green-bg); border-left-color: var(--green); }
+  .card.amber { background: var(--amber-bg); border-left-color: var(--amber); }
+
+  .card h4 {
+    font-size: 10pt;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--dark);
+  }
+
+  .card p {
+    font-size: 9.5pt;
+    margin-bottom: 0;
+    line-height: 1.45;
+  }
+
+  /* Big number callouts */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  .stat-box {
+    text-align: center;
+    padding: 20px 12px;
+    background: var(--gray-100);
+    border-radius: 6px;
+  }
+
+  .stat-box .number {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28pt;
+    color: var(--blue);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .stat-box .label {
+    font-size: 8.5pt;
+    color: var(--gray-600);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 9.5pt;
+  }
+
+  thead th {
+    background: var(--dark);
+    color: #fff;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  thead th:first-child { border-radius: 4px 0 0 0; }
+  thead th:last-child { border-radius: 0 4px 0 0; }
+
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--gray-200);
+    color: var(--gray-600);
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  tbody tr:nth-child(even) { background: var(--gray-100); }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 8pt;
+    font-weight: 700;
+  }
+
+  .badge-red { background: #fee2e2; color: var(--red); }
+  .badge-green { background: #d1fae5; color: var(--green); }
+  .badge-amber { background: #fef3c7; color: var(--amber); }
+  .badge-blue { background: var(--blue-light); color: var(--blue); }
+
+  /* Pipeline diagram */
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 20px 0;
+    justify-content: center;
+  }
+
+  .pipeline-step {
+    background: var(--blue-light);
+    border: 2px solid var(--blue);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+    min-width: 100px;
+  }
+
+  .pipeline-step.highlight {
+    background: var(--blue);
+    color: #fff;
+  }
+
+  .pipeline-step .step-title {
+    font-weight: 700;
+    font-size: 9pt;
+  }
+
+  .pipeline-step .step-sub {
+    font-size: 7.5pt;
+    opacity: 0.75;
+    margin-top: 2px;
+  }
+
+  .pipeline-step.highlight .step-sub { color: rgba(255,255,255,0.8); }
+
+  .pipeline-arrow {
+    font-size: 16pt;
+    color: var(--blue);
+    padding: 0 6px;
+    font-weight: 700;
+  }
+
+  /* Revenue cards */
+  .revenue-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 16px 0;
+  }
+
+  .revenue-card {
+    border: 2px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 18px;
+    position: relative;
+  }
+
+  .revenue-card .revenue-amount {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20pt;
+    color: var(--blue);
+    margin-bottom: 4px;
+  }
+
+  .revenue-card .revenue-source {
+    font-weight: 700;
+    font-size: 10pt;
+    color: var(--dark);
+    margin-bottom: 6px;
+  }
+
+  .revenue-card p {
+    font-size: 9pt;
+    margin: 0;
+  }
+
+  /* Timeline */
+  .timeline {
+    display: flex;
+    gap: 0;
+    margin: 20px 0;
+    position: relative;
+  }
+
+  .timeline::before {
+    content: '';
+    position: absolute;
+    top: 20px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gray-200);
+  }
+
+  .timeline-item {
+    flex: 1;
+    text-align: center;
+    position: relative;
+    padding-top: 36px;
+  }
+
+  .timeline-item::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--gray-400);
+    border: 3px solid #fff;
+    z-index: 1;
+  }
+
+  .timeline-item.done::before { background: var(--green); }
+  .timeline-item.active::before { background: var(--blue); box-shadow: 0 0 0 4px var(--blue-light); }
+  .timeline-item.future::before { background: var(--gray-300); }
+
+  .timeline-item .tl-label {
+    font-weight: 700;
+    font-size: 9.5pt;
+    color: var(--dark);
+    margin-bottom: 4px;
+  }
+
+  .timeline-item .tl-desc {
+    font-size: 8.5pt;
+    color: var(--gray-600);
+  }
+
+  /* Utility */
+  .mt-12 { margin-top: 12px; }
+  .mt-20 { margin-top: 20px; }
+  .mt-28 { margin-top: 28px; }
+  .mb-8 { margin-bottom: 8px; }
+  .text-small { font-size: 9pt; }
+  .text-center { text-align: center; }
+
+  .highlight-box {
+    background: var(--blue);
+    color: #fff;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+
+  .highlight-box h3 { color: rgba(255,255,255,0.7); }
+  .highlight-box p { color: rgba(255,255,255,0.9); }
+  .highlight-box strong { color: #fff; }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .icon-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--blue);
+    color: #fff;
+    font-weight: 700;
+    font-size: 11pt;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+
+  .step-item {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+
+  .step-item-content h4 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 2px;
+  }
+
+  .step-item-content p {
+    font-size: 9pt;
+    margin: 0;
+  }
+
+  .check-list {
+    list-style: none;
+    padding: 0;
+  }
+
+  .check-list li {
+    padding: 6px 0;
+    padding-left: 24px;
+    position: relative;
+    font-size: 10pt;
+    color: var(--gray-600);
+  }
+
+  .check-list li::before {
+    content: "\2713";
+    position: absolute;
+    left: 0;
+    color: var(--green);
+    font-weight: 700;
+  }
+
+  .cross-list li::before {
+    content: "\2717";
+    color: var(--red);
+  }
+
+  /* Print */
+  @media print {
+    body { background: #fff; }
+    .page {
+      box-shadow: none;
+      border: none;
+      margin: 0;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== PAGE 1: COVER ===== -->
+<div class="page cover" data-footer="">
+  <div class="cover-badge">Confidential</div>
+  <h1>NexusCodec</h1>
+  <h1 style="margin-top:-4px"><span>Full H.265 Video Stack</span></h1>
+  <div class="cover-line"></div>
+  <div class="cover-subtitle">
+    What owning a complete video codec means for the business
+  </div>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      Status
+      <span>Decoder Complete, Encoder Planned</span>
+    </div>
+    <div class="cover-meta-item">
+      Technology
+      <span>Pure C, Zero Dependencies</span>
+    </div>
+    <div class="cover-meta-item">
+      Market
+      <span>$60B Video Surveillance</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PAGE 2: THE PROBLEM ===== -->
+<div class="page" data-footer="NexusCodec — Business Overview">
+  <div class="section-label">The Problem</div>
+  <h2>Every NVR Company Has a Codec Problem</h2>
+
+  <p style="font-size:11pt; color:var(--dark); max-width:500px; margin-bottom:20px;">
+    Video surveillance systems need to <strong>decode</strong> video from cameras and <strong>encode</strong> video for storage. Every company in this market relies on third-party codec software &mdash; and every option is painful.
+  </p>
+
+  <div class="card-grid">
+    <div class="card red">
+      <h4>FFmpeg &mdash; Open Source Trap</h4>
+      <p>Most used video library in the world. Licensed under <strong>GPL</strong> &mdash; meaning any product using it must also be open-sourced. Companies using FFmpeg commercially carry <strong>permanent legal risk</strong>.</p>
+    </div>
+    <div class="card red">
+      <h4>Commercial Licenses &mdash; Expensive</h4>
+      <p>MainConcept, Intel Media SDK, and others charge <strong>$50,000&ndash;100,000/year</strong> for codec licenses. Small/medium NVR companies can't afford this.</p>
+    </div>
+    <div class="card amber">
+      <h4>H.265 Patent Royalties &mdash; Triple Tax</h4>
+      <p>H.265 has <strong>three separate patent pools</strong> (MPEG LA, HEVC Advance, Access Advance). Up to <strong>$1.50 per device</strong>. Three contracts, three legal processes.</p>
+    </div>
+    <div class="card amber">
+      <h4>Hardware Lock-in</h4>
+      <p>Intel Quick Sync, NVIDIA NVDEC &mdash; tied to specific chips. Can't run on ARM, AMD, or low-cost hardware. <strong>No portability.</strong></p>
+    </div>
+  </div>
+
+  <div class="highlight-box">
+    <h3>THE BOTTOM LINE</h3>
+    <p>
+      Thousands of NVR companies worldwide are stuck: use FFmpeg and <strong>risk a lawsuit</strong>, pay $50K+/year for a license, or spend 2&ndash;3 years and $500K+ building their own. <strong>There is no good option.</strong>
+    </p>
+  </div>
+  <span class="page-num">2</span>
+</div>
+
+<!-- ===== PAGE 3: OUR SOLUTION ===== -->
+<div class="page" data-footer="NexusCodec — Business Overview">
+  <div class="section-label">Our Solution</div>
+  <h2>We Built Our Own. From Scratch.</h2>
+
+  <p style="font-size:11pt; color:var(--dark); max-width:520px; margin-bottom:20px;">
+    <strong>NexusCodec</strong> is a complete H.265 video stack written in pure C with zero external dependencies. We own every line of code. No GPL. No license fees. No hardware lock-in.
+  </p>
+
+  <div class="two-col mt-20">
+    <div>
+      <div class="card green" style="min-height:170px">
+        <h4>NexusDecode &mdash; Decoder <span class="badge badge-green">DONE</span></h4>
+        <p style="margin-top:8px">Converts compressed H.265/H.264 video from cameras into viewable images.</p>
+        <ul class="check-list" style="margin-top:10px">
+          <li>184 KB binary (vs 30+ MB for FFmpeg)</li>
+          <li>46x faster than FFmpeg on CPU</li>
+          <li>6,300 frames/sec at 640x480</li>
+          <li>Pixel-perfect quality (verified)</li>
+          <li>Runs on Intel, AMD, and ARM</li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="border-left-color:var(--blue); min-height:170px">
+        <h4>NexusEncode &mdash; Encoder <span class="badge badge-blue">PLANNED</span></h4>
+        <p style="margin-top:8px">Compresses video for storage, export, re-streaming, and analytics overlay.</p>
+        <ul class="check-list" style="margin-top:10px">
+          <li>Record camera streams to disk</li>
+          <li>Export evidence clips (MP4)</li>
+          <li>Add detection overlay (bounding boxes)</li>
+          <li>Re-stream at lower quality for mobile</li>
+          <li>Estimated: 3&ndash;5 months development</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-row mt-20">
+    <div class="stat-box">
+      <div class="number">184<span style="font-size:14pt">KB</span></div>
+      <div class="label">Binary Size</div>
+    </div>
+    <div class="stat-box">
+      <div class="number">46<span style="font-size:14pt">x</span></div>
+      <div class="label">Faster than FFmpeg</div>
+    </div>
+    <div class="stat-box">
+      <div class="number">0</div>
+      <div class="label">Dependencies</div>
+    </div>
+  </div>
+  <span class="page-num">3</span>
+</div>
+
+<!-- ===== PAGE 4: WHAT DECODER AND ENCODER DO ===== -->
+<div class="page" data-footer="NexusCodec — Business Overview">
+  <div class="section-label">In Simple Terms</div>
+  <h2>What the Decoder and Encoder Do</h2>
+
+  <div class="two-col mt-20">
+    <div>
+      <h3 style="color:var(--green);">Decoder = Camera to Screen</h3>
+      <p style="font-size:10.5pt; margin-bottom:14px;">
+        IP cameras send video as compressed data (H.265). The <strong>decoder</strong> converts this back into viewable images in real time.
+      </p>
+      <div class="card green" style="padding:14px 18px">
+        <p style="font-size:9.5pt; margin:0; line-height:1.6;">
+          <strong>Without a decoder:</strong> the NVR receives data from cameras but can't show anything on screen. It's like receiving a letter in a foreign language with no translator.<br><br>
+          <strong>Every NVR system needs a decoder.</strong> It is not optional.
+        </p>
+      </div>
+    </div>
+    <div>
+      <h3 style="color:var(--blue);">Encoder = Screen to Storage</h3>
+      <p style="font-size:10.5pt; margin-bottom:14px;">
+        The <strong>encoder</strong> takes video and compresses it for storage on disk or transmission over network.
+      </p>
+      <div class="card" style="border-left-color:var(--blue); padding:14px 18px">
+        <p style="font-size:9.5pt; margin:0; line-height:1.6;">
+          <strong>Without an encoder, you cannot:</strong><br>
+          &bull;&ensp;Record video to disk<br>
+          &bull;&ensp;Export clips for police/court evidence<br>
+          &bull;&ensp;Add analytics overlay (bounding boxes)<br>
+          &bull;&ensp;Re-stream to mobile at lower quality<br><br>
+          <strong>An encoder completes the pipeline.</strong>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-28">
+    <h3>The Complete Pipeline</h3>
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-title">IP Camera</div>
+        <div class="step-sub">H.265 stream</div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-step highlight">
+        <div class="step-title">DECODE</div>
+        <div class="step-sub">NexusDecode</div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-step highlight" style="background:var(--blue-mid)">
+        <div class="step-title">ANALYTICS</div>
+        <div class="step-sub">nn2 AI Engine</div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-step highlight">
+        <div class="step-title">ENCODE</div>
+        <div class="step-sub">NexusEncode</div>
+      </div>
+      <div class="pipeline-arrow">&rarr;</div>
+      <div class="pipeline-step">
+        <div class="step-title">Storage</div>
+        <div class="step-sub">Record / Export</div>
+      </div>
+    </div>
+    <p class="text-center text-small" style="color:var(--gray-400); margin-top:8px;">
+      Every blue box is our proprietary technology. No third-party code anywhere in the pipeline.
+    </p>
+  </div>
+  <span class="page-num">4</span>
+</div>
+
+<!-- ===== PAGE 5: WHY BOTH TOGETHER ===== -->
+<div class="page" data-footer="NexusCodec — Business Overview">
+  <div class="section-label">Strategic Value</div>
+  <h2>Why Decoder + Encoder Together Changes Everything</h2>
+
+  <div class="mt-12">
+    <div class="step-item">
+      <span class="icon-num">1</span>
+      <div class="step-item-content">
+        <h4>Complete Independence from FFmpeg</h4>
+        <p>No GPL code anywhere in the product. No legal risk. No forced open-sourcing. Full freedom to license commercially.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <span class="icon-num">2</span>
+      <div class="step-item-content">
+        <h4>Zero License Fees</h4>
+        <p>No $50&ndash;100K/year to MainConcept or Intel. Code is ours, costs are ours to control. Every sale is pure margin.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <span class="icon-num">3</span>
+      <div class="step-item-content">
+        <h4>Runs on Any Hardware</h4>
+        <p>Pure C with SIMD optimization. Works on Intel, AMD, ARM (Raspberry Pi, Rockchip). Not locked to any chip vendor.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <span class="icon-num">4</span>
+      <div class="step-item-content">
+        <h4>Bundled with AI Analytics</h4>
+        <p>Our nn2 YOLO engine (1.5x faster than ONNX Runtime) plugs directly into the codec pipeline. <strong>Decode &rarr; Detect &rarr; Encode in one binary.</strong> No competitor offers this.</p>
+      </div>
+    </div>
+    <div class="step-item">
+      <span class="icon-num">5</span>
+      <div class="step-item-content">
+        <h4>We Can Sell It to Others</h4>
+        <p>Thousands of NVR companies need exactly this. We can license NexusCodec as an SDK and generate recurring revenue.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight-box mt-20">
+    <h3>KEY INSIGHT</h3>
+    <p>
+      A decoder alone is useful. An encoder alone is useful. <strong>Both together with AI analytics is a platform</strong> &mdash; the foundation for an entire NVR product line and a licensing business targeting every surveillance company in the world.
+    </p>
+  </div>
+  <span class="page-num">5</span>
+</div>
+
+<!-- ===== PAGE 6: COMPETITIVE COMPARISON ===== -->
+<div class="page" data-footer="NexusCodec — Business Overview">
+  <div class="section-label">Competition</div>
+  <h2>Competitive Landscape</h2>
+
+  <table class="mt-12">
+    <thead>
+      <tr>
+        <th style="width:18%">Solution</th>
+        <th style="width:16%">License</th>
+        <th style="width:14%">Cost</th>
+        <th style="width:14%">Hardware</th>
+        <th style="width:14%">AI Analytics</th>
+        <th style="width:24%">Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>FFmpeg</strong></td>
+        <td><span class="badge badge-red">GPL</span></td>
+        <td>Free</td>
+        <td>Any CPU</td>
+        <td>None</td>
+        <td>Must open-source your product or face lawsuit</td>
+      </tr>
+      <tr>
+        <td><strong>MainConcept</strong></td>
+        <td>Commercial</td>
+        <td><strong>$50&ndash;100K/yr</strong></td>
+        <td>x86 only</td>
+        <td>None</td>
+        <td>Expensive, vendor dependency</td>
+      </tr>
+      <tr>
+        <td><strong>Intel Media SDK</strong></td>
+        <td>Free</td>
+        <td>Free</td>
+        <td><span class="badge badge-amber">Intel only</span></td>
+        <td>None</td>
+        <td>Locked to Intel CPUs</td>
+      </tr>
+      <tr>
+        <td><strong>NVIDIA NVDEC</strong></td>
+        <td>Free</td>
+        <td>GPU cost</td>
+        <td><span class="badge badge-amber">GPU only</span></td>
+        <td>Separate</td>
+        <td>$500+ GPU required per server</td>
+      </tr>
+      <tr style="background:var(--blue-light) !important">
+        <td><strong style="color:var(--blue)">NexusCodec</strong></td>
+        <td><span class="badge badge-green">Proprietary</span></td>
+        <td><strong>Ours</strong></td>
+        <td><span class="badge badge-green">Any CPU</span></td>
+        <td><span class="badge badge-green">Built-in</span></td>
+        <td style="color:var(--green); font-weight:600;">Zero legal risk, zero dependencies</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="mt-28">
+    <h3>Our Unique Advantages</h3>
+    <div class="card-grid" style="grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+      <div class="card green" style="text-align:center; padding:20px 12px;">
+        <div style="font-family:'DM Serif Display',serif; font-size:22pt; color:var(--green);">418 KB</div>
+        <p style="font-size:8.5pt; margin:4px 0 0;">Total binary size<br>(H.264 + H.265)</p>
+      </div>
+      <div class="card green" style="text-align:center; padding:20px 12px;">
+        <div style="font-family:'DM Serif Display',serif; font-size:22pt; color:var(--green);">$0</div>
+        <p style="font-size:8.5pt; margin:4px 0 0;">Third-party<br>license costs</p>
+      </div>
+      <div class="card green" style="text-align:center; padding:20px 12px;">
+        <div style="font-family:'DM Serif Display',serif; font-size:22pt; color:var(--green);">3</div>
+        <p style="font-size:8.5pt; margin:4px 0 0;">Products in one stack<br>(Decode + AI + Encode)</p>
+      </div>
+    </div>
+  </div>
+  <span class="page-num">6</span>
+</div>
+
+<!-- ===== PAGE 7: REVENUE ===== -->
+<div class="page" data-footer="NexusCodec — Business Overview">
+  <div class="section-label">Revenue Model</div>
+  <h2>How We Make Money</h2>
+
+  <div class="revenue-grid mt-20">
+    <div class="revenue-card">
+      <div class="revenue-amount">$15&ndash;50K</div>
+      <div class="revenue-source">SDK License (per customer/year)</div>
+      <p>License NexusCodec to NVR software companies. They integrate our decoder/encoder into their product. Recurring annual fee.</p>
+      <p class="mt-12"><strong>Target:</strong> 10&ndash;20 customers = $150K&ndash;$1M/year</p>
+    </div>
+    <div class="revenue-card">
+      <div class="revenue-amount">$100&ndash;500K</div>
+      <div class="revenue-source">OEM Chip Deals</div>
+      <p>License to chip manufacturers (Ambarella, Rockchip, Novatek) as reference software decoder for their camera/NVR SoCs.</p>
+      <p class="mt-12"><strong>Target:</strong> 2&ndash;3 deals = $200K&ndash;$1.5M</p>
+    </div>
+    <div class="revenue-card">
+      <div class="revenue-amount">$5&ndash;10</div>
+      <div class="revenue-source">SaaS per Camera/Month</div>
+      <p>Our own NVR product: cloud-managed, edge-deployed. Full stack: decode + AI analytics + recording + web dashboard.</p>
+      <p class="mt-12"><strong>Target:</strong> 500 cameras = $30&ndash;60K MRR</p>
+    </div>
+    <div class="revenue-card">
+      <div class="revenue-amount">$30&ndash;80K</div>
+      <div class="revenue-source">Analytics Add-on</div>
+      <p>Sell nn2 AI engine separately: person detection, counting, zone intrusion. Works on CPU, no GPU needed.</p>
+      <p class="mt-12"><strong>Target:</strong> Bundle with codec SDK</p>
+    </div>
+  </div>
+
+  <div class="highlight-box mt-12">
+    <h3>YEAR 1 REVENUE PROJECTION</h3>
+    <p>
+      Conservative estimate with SDK licensing focus:<br>
+      <strong>5 SDK customers &times; $25K avg = $125K</strong> + 1 OEM deal $150K = <strong>$275K first year</strong><br>
+      Growing to <strong>$500K&ndash;$1M</strong> in year 2 as encoder completes and customer base expands.
+    </p>
+  </div>
+  <span class="page-num">7</span>
+</div>
+
+<!-- ===== PAGE 8: MARKET + TIMELINE ===== -->
+<div class="page" data-footer="NexusCodec — Business Overview">
+  <div class="section-label">Market &amp; Timeline</div>
+  <h2>Market Opportunity</h2>
+
+  <div class="stat-row">
+    <div class="stat-box">
+      <div class="number">$60<span style="font-size:14pt">B</span></div>
+      <div class="label">Video Surveillance Market</div>
+    </div>
+    <div class="stat-box">
+      <div class="number">$2<span style="font-size:14pt">B</span></div>
+      <div class="label">Codec Licensing Segment</div>
+    </div>
+    <div class="stat-box">
+      <div class="number">1000<span style="font-size:14pt">+</span></div>
+      <div class="label">NVR Companies Worldwide</div>
+    </div>
+  </div>
+
+  <p class="mt-12" style="font-size:10.5pt;">
+    Every company building NVR software, smart cameras, or video analytics is a potential customer. Key geographies: <strong>China, Taiwan, South Korea, Turkey, Brazil, India, Europe</strong> &mdash; where hundreds of small/medium NVR vendors are stuck with FFmpeg GPL or expensive licenses.
+  </p>
+
+  <div class="mt-28">
+    <h2>Development Timeline</h2>
+    <div class="timeline mt-20">
+      <div class="timeline-item done">
+        <div class="tl-label">H.265 Decoder</div>
+        <div class="tl-desc">Complete. 13,500 LOC.<br>Verified pixel-perfect.</div>
+      </div>
+      <div class="timeline-item done">
+        <div class="tl-label">AI Analytics</div>
+        <div class="tl-desc">Complete. nn2 YOLO engine.<br>1.5x faster than ONNX RT.</div>
+      </div>
+      <div class="timeline-item active">
+        <div class="tl-label">SDK Packaging</div>
+        <div class="tl-desc">In progress. API docs,<br>benchmarks, examples.</div>
+      </div>
+      <div class="timeline-item future">
+        <div class="tl-label">H.265 Encoder</div>
+        <div class="tl-desc">3&ndash;5 months.<br>Completes the pipeline.</div>
+      </div>
+      <div class="timeline-item future">
+        <div class="tl-label">Market Entry</div>
+        <div class="tl-desc">First SDK customers.<br>OEM outreach.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight-box mt-28">
+    <h3>SUMMARY</h3>
+    <p>
+      We have built technology that <strong>thousands of companies need</strong> but almost no one has: a complete, independent video codec + AI analytics stack with zero dependencies and zero legal risk. The decoder is done and proven. The encoder will complete the picture. Together, they form the foundation of a scalable licensing business in a <strong>$60B market</strong>.
+    </p>
+  </div>
+  <span class="page-num">8</span>
+</div>
+
+</body>
+</html>

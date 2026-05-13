@@ -1,0 +1,92 @@
+
+=== run start: epochs=60 batch=256 ===
+epoch 1/60  train_loss=24.754  test_NME=104.762%  time=1.2 min  lr=5.60e-05
+  -> new best 104.762%
+epoch 2/60  train_loss=24.119  test_NME=99.929%  time=1.2 min  lr=1.14e-04
+  -> new best 99.929%
+epoch 3/60  train_loss=23.019  test_NME=108.611%  time=1.2 min  lr=1.72e-04
+epoch 4/60  train_loss=21.326  test_NME=107.415%  time=1.2 min  lr=2.30e-04
+epoch 5/60  train_loss=18.103  test_NME=78.684%  time=1.2 min  lr=2.88e-04
+  -> new best 78.684%
+epoch 6/60  train_loss=13.482  test_NME=46.471%  time=1.2 min  lr=3.46e-04
+  -> new best 46.471%
+epoch 7/60  train_loss=10.619  test_NME=30.783%  time=1.2 min  lr=4.04e-04
+  -> new best 30.783%
+epoch 8/60  train_loss=9.810  test_NME=27.972%  time=1.2 min  lr=4.62e-04
+  -> new best 27.972%
+epoch 9/60  train_loss=9.672  test_NME=26.452%  time=1.2 min  lr=5.20e-04
+  -> new best 26.452%
+epoch 10/60  train_loss=9.298  test_NME=25.710%  time=1.2 min  lr=5.78e-04
+  -> new best 25.710%
+epoch 11/60  train_loss=8.975  test_NME=25.609%  time=1.2 min  lr=6.36e-04
+  -> new best 25.609%
+epoch 12/60  train_loss=8.901  test_NME=24.405%  time=1.2 min  lr=6.94e-04
+  -> new best 24.405%
+epoch 13/60  train_loss=8.680  test_NME=25.887%  time=1.2 min  lr=7.52e-04
+epoch 14/60  train_loss=8.785  test_NME=23.709%  time=1.2 min  lr=8.10e-04
+  -> new best 23.709%
+epoch 15/60  train_loss=8.464  test_NME=24.730%  time=1.2 min  lr=8.68e-04
+epoch 16/60  train_loss=8.509  test_NME=34.933%  time=1.2 min  lr=9.26e-04
+epoch 17/60  train_loss=8.630  test_NME=22.802%  time=1.2 min  lr=9.84e-04
+  -> new best 22.802%
+epoch 18/60  train_loss=8.614  test_NME=28.329%  time=1.2 min  lr=9.99e-04
+epoch 19/60  train_loss=8.436  test_NME=21.792%  time=1.2 min  lr=9.96e-04
+  -> new best 21.792%
+epoch 20/60  train_loss=8.540  test_NME=39.490%  time=1.2 min  lr=9.90e-04
+epoch 21/60  train_loss=8.282  test_NME=20.384%  time=1.2 min  lr=9.81e-04
+  -> new best 20.384%
+epoch 22/60  train_loss=8.015  test_NME=94.271%  time=1.2 min  lr=9.70e-04
+epoch 23/60  train_loss=7.905  test_NME=34.431%  time=1.2 min  lr=9.56e-04
+epoch 24/60  train_loss=7.932  test_NME=19.403%  time=1.2 min  lr=9.40e-04
+  -> new best 19.403%
+epoch 25/60  train_loss=7.450  test_NME=17.381%  time=1.2 min  lr=9.22e-04
+  -> new best 17.381%
+epoch 26/60  train_loss=7.012  test_NME=16.785%  time=1.2 min  lr=9.01e-04
+  -> new best 16.785%
+epoch 27/60  train_loss=7.287  test_NME=19.047%  time=1.2 min  lr=8.78e-04
+epoch 28/60  train_loss=6.908  test_NME=23.341%  time=1.2 min  lr=8.53e-04
+epoch 29/60  train_loss=6.983  test_NME=16.126%  time=1.2 min  lr=8.26e-04
+  -> new best 16.126%
+epoch 30/60  train_loss=6.721  test_NME=14.654%  time=1.2 min  lr=7.97e-04
+  -> new best 14.654%
+epoch 31/60  train_loss=6.479  test_NME=33.256%  time=1.2 min  lr=7.67e-04
+epoch 32/60  train_loss=6.323  test_NME=16.704%  time=1.2 min  lr=7.35e-04
+epoch 33/60  train_loss=6.237  test_NME=14.275%  time=1.2 min  lr=7.02e-04
+  -> new best 14.275%
+epoch 34/60  train_loss=6.099  test_NME=17.644%  time=1.2 min  lr=6.68e-04
+epoch 35/60  train_loss=6.022  test_NME=18.583%  time=1.2 min  lr=6.33e-04
+epoch 36/60  train_loss=6.226  test_NME=14.026%  time=1.2 min  lr=5.97e-04
+  -> new best 14.026%
+epoch 37/60  train_loss=5.862  test_NME=15.332%  time=1.2 min  lr=5.61e-04
+epoch 38/60  train_loss=5.887  test_NME=13.458%  time=1.2 min  lr=5.25e-04
+  -> new best 13.458%
+epoch 39/60  train_loss=5.769  test_NME=12.525%  time=1.2 min  lr=4.88e-04
+  -> new best 12.525%
+epoch 40/60  train_loss=5.591  test_NME=12.929%  time=1.2 min  lr=4.51e-04
+epoch 41/60  train_loss=5.626  test_NME=14.766%  time=1.2 min  lr=4.15e-04
+epoch 42/60  train_loss=5.610  test_NME=14.445%  time=1.2 min  lr=3.79e-04
+epoch 43/60  train_loss=5.498  test_NME=13.005%  time=1.2 min  lr=3.44e-04
+epoch 44/60  train_loss=5.442  test_NME=12.570%  time=1.2 min  lr=3.09e-04
+epoch 45/60  train_loss=5.270  test_NME=12.613%  time=1.2 min  lr=2.76e-04
+epoch 46/60  train_loss=5.267  test_NME=12.269%  time=1.2 min  lr=2.44e-04
+  -> new best 12.269%
+epoch 47/60  train_loss=5.242  test_NME=12.757%  time=1.2 min  lr=2.13e-04
+epoch 48/60  train_loss=5.188  test_NME=11.938%  time=1.2 min  lr=1.84e-04
+  -> new best 11.938%
+epoch 49/60  train_loss=5.066  test_NME=12.656%  time=1.2 min  lr=1.56e-04
+epoch 50/60  train_loss=5.019  test_NME=12.476%  time=1.2 min  lr=1.31e-04
+epoch 51/60  train_loss=5.008  test_NME=11.740%  time=1.2 min  lr=1.07e-04
+  -> new best 11.740%
+epoch 52/60  train_loss=4.938  test_NME=12.299%  time=1.2 min  lr=8.55e-05
+epoch 53/60  train_loss=4.955  test_NME=11.471%  time=1.2 min  lr=6.62e-05
+  -> new best 11.471%
+epoch 54/60  train_loss=4.905  test_NME=11.405%  time=1.2 min  lr=4.93e-05
+  -> new best 11.405%
+epoch 55/60  train_loss=4.878  test_NME=11.509%  time=1.2 min  lr=3.48e-05
+epoch 56/60  train_loss=4.840  test_NME=11.378%  time=1.2 min  lr=2.28e-05
+  -> new best 11.378%
+epoch 57/60  train_loss=4.816  test_NME=11.581%  time=1.2 min  lr=1.34e-05
+epoch 58/60  train_loss=4.814  test_NME=11.472%  time=1.2 min  lr=6.57e-06
+epoch 59/60  train_loss=4.827  test_NME=11.374%  time=1.2 min  lr=2.44e-06
+  -> new best 11.374%
+epoch 60/60  train_loss=4.761  test_NME=11.426%  time=1.2 min  lr=1.00e-06

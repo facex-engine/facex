@@ -14,7 +14,7 @@ void pack_weights_4x8c8(const int8_t* w, const float* scales, int K, int N,
 
 int packed_weights_size_4x8c8(int K, int N) {
     (void)K; (void)N;
-    return 0; /* return 0 so engine skips INT8 path and uses FP32 */
+    return 64; /* minimum allocation */
 }
 
 void int8_gemm_4x8c8(int M, int N, int K,

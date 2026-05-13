@@ -1,18 +1,46 @@
+# === Model weights (intellectual property) ===
+*.onnx
+*.bin
+*.pt
+*.pth
+*.engine
+*.plan
+*.trt
+*.tflite
+*.enc
+
+# === Encryption keys (NEVER commit) ===
+.model_key
+*.key
+
+# === Training data ===
+training/data/
+training/runs/
+training/Silent-Face-Anti-Spoofing/
+training/nn2-mirror/
+
+# === Caches ===
+__pycache__/
+*.pyc
+node_modules/
+*.zip
+*.rar
+
+# === Build artifacts ===
+build/
+dist/
+*.exe
 *.o
 *.a
-*.exe
-*.bin
-*.enc
 *.dll
-*.so
-*.dylib
 
-# Local toolchains and datasets — NOT committed
-emsdk/
-lfw/
-lfw.tgz
-node_modules/
-weights/golden/
-*.npz
-gmon.out
-__pycache__/
+# === Editor / IDE ===
+.vscode/
+.idea/
+.claude/
+
+# === Big binary blobs ===
+*.yuv
+*.h264
+*.h265
+*.gcda

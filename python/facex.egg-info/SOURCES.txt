@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+facex/__init__.py
+facex/core.py
+facex/py.typed
+facex.egg-info/PKG-INFO
+facex.egg-info/SOURCES.txt
+facex.egg-info/dependency_links.txt
+facex.egg-info/requires.txt
+facex.egg-info/top_level.txt
