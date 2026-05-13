@@ -23,6 +23,7 @@ TARGETS = [
     "facex_tiny.onnx",
     "minifasnet_v2_27.onnx",
     "minifasnet_v1se_40.onnx",
+    "facex_tongue.onnx",
 ]
 
 KEY_FILE = WASM.parent / ".model_key"

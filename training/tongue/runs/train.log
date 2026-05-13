@@ -1,0 +1,45 @@
+
+=== run: ep=30 batch=128 ===
+ep 1/30  acc 0.819  prec 0.000  rec 0.000  f1 0.000  loss 0.656  time 0.3min  lr 2.50e-04
+ep 2/30  acc 0.866  prec 0.718  rec 0.424  f1 0.533  loss 0.562  time 0.0min  lr 5.00e-04
+  -> new best F1 0.533
+ep 3/30  acc 0.830  prec 0.523  rec 0.697  f1 0.597  loss 0.479  time 0.0min  lr 7.50e-04
+  -> new best F1 0.597
+ep 4/30  acc 0.797  prec 0.467  rec 0.864  f1 0.606  loss 0.423  time 0.0min  lr 1.00e-03
+  -> new best F1 0.606
+ep 5/30  acc 0.830  prec 0.518  rec 0.894  f1 0.656  loss 0.379  time 0.0min  lr 9.97e-04
+  -> new best F1 0.656
+ep 6/30  acc 0.910  prec 0.709  rec 0.848  f1 0.772  loss 0.325  time 0.0min  lr 9.86e-04
+  -> new best F1 0.772
+ep 7/30  acc 0.926  prec 0.831  rec 0.742  f1 0.784  loss 0.304  time 0.0min  lr 9.68e-04
+  -> new best F1 0.784
+ep 8/30  acc 0.926  prec 0.747  rec 0.894  f1 0.814  loss 0.248  time 0.0min  lr 9.44e-04
+  -> new best F1 0.814
+ep 9/30  acc 0.932  prec 0.766  rec 0.894  f1 0.825  loss 0.219  time 0.0min  lr 9.13e-04
+  -> new best F1 0.825
+ep 10/30  acc 0.956  prec 0.868  rec 0.894  f1 0.881  loss 0.181  time 0.0min  lr 8.76e-04
+  -> new best F1 0.881
+ep 11/30  acc 0.945  prec 0.859  rec 0.833  f1 0.846  loss 0.175  time 0.0min  lr 8.34e-04
+ep 12/30  acc 0.967  prec 0.875  rec 0.955  f1 0.913  loss 0.138  time 0.0min  lr 7.86e-04
+  -> new best F1 0.913
+ep 13/30  acc 0.945  prec 0.780  rec 0.970  f1 0.865  loss 0.131  time 0.0min  lr 7.35e-04
+ep 14/30  acc 0.953  prec 0.827  rec 0.939  f1 0.879  loss 0.114  time 0.0min  lr 6.80e-04
+ep 15/30  acc 0.951  prec 0.800  rec 0.970  f1 0.877  loss 0.099  time 0.0min  lr 6.22e-04
+ep 16/30  acc 0.981  prec 0.984  rec 0.909  f1 0.945  loss 0.087  time 0.0min  lr 5.63e-04
+  -> new best F1 0.945
+ep 17/30  acc 0.956  prec 0.812  rec 0.985  f1 0.890  loss 0.100  time 0.0min  lr 5.03e-04
+ep 18/30  acc 0.962  prec 0.894  rec 0.894  f1 0.894  loss 0.088  time 0.0min  lr 4.43e-04
+ep 19/30  acc 0.956  prec 0.829  rec 0.955  f1 0.887  loss 0.082  time 0.0min  lr 3.83e-04
+ep 20/30  acc 0.964  prec 0.873  rec 0.939  f1 0.905  loss 0.087  time 0.0min  lr 3.26e-04
+ep 21/30  acc 0.981  prec 0.954  rec 0.939  f1 0.947  loss 0.065  time 0.0min  lr 2.71e-04
+  -> new best F1 0.947
+ep 22/30  acc 0.967  prec 0.897  rec 0.924  f1 0.910  loss 0.065  time 0.0min  lr 2.19e-04
+ep 23/30  acc 0.986  prec 0.955  rec 0.970  f1 0.962  loss 0.066  time 0.0min  lr 1.71e-04
+  -> new best F1 0.962
+ep 24/30  acc 0.964  prec 0.873  rec 0.939  f1 0.905  loss 0.064  time 0.0min  lr 1.28e-04
+ep 25/30  acc 0.984  prec 0.941  rec 0.970  f1 0.955  loss 0.080  time 0.0min  lr 9.08e-05
+ep 26/30  acc 0.975  prec 0.925  rec 0.939  f1 0.932  loss 0.060  time 0.0min  lr 5.93e-05
+ep 27/30  acc 0.978  prec 0.953  rec 0.924  f1 0.938  loss 0.063  time 0.0min  lr 3.43e-05
+ep 28/30  acc 0.967  prec 0.875  rec 0.955  f1 0.913  loss 0.062  time 0.0min  lr 1.61e-05
+ep 29/30  acc 0.967  prec 0.875  rec 0.955  f1 0.913  loss 0.055  time 0.0min  lr 4.94e-06
+ep 30/30  acc 0.975  prec 0.913  rec 0.955  f1 0.933  loss 0.064  time 0.0min  lr 1.01e-06

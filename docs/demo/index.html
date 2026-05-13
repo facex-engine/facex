@@ -262,7 +262,7 @@ const btnLock  = $('btnLock');
 const btnUnlock = $('btnUnlock');
 const btnStop = $('btnStop');
 
-let detSess = null, lmSess = null, recSess = null, lm3dSess = null, spoof27Sess = null, spoof40Sess = null, meshTopology = null, stream = null, running = false;
+let detSess = null, lmSess = null, recSess = null, lm3dSess = null, spoof27Sess = null, spoof40Sess = null, tongueSess = null, meshTopology = null, stream = null, running = false;
 let mode = 'hybrid';
 let last3D = [];     // per-face 478 [x,y,z] from true-3D model (overlay coords)
 let lastHybrid = []; // per-face 478 [x,y,z] from hybrid (WFLW->MP via TPS)
@@ -276,6 +276,9 @@ let lastSim = null;      // most recent cosine similarity to ref
 let lastPts2d = null, lastBox = null, lastFaceCount = 0;
 let lastLive = null, lastSpoof = null;  // P(live), P(spoof) from antispoof model
 let spoofMs = 0;
+let lastTongueProb = 0;                 // EMA-smoothed P(tongue out) from tongue classifier
+const TONGUE_EMA = 0.6;
+const TONGUE_THRESH = 0.6;              // tuned for the F1=0.96 model
 // EMA smoothing for spoof probability — antispoof can flicker on partial occlusion
 let emaLive = null;
 const SPOOF_EMA = 0.65;            // higher → smoother
@@ -428,6 +431,7 @@ async function loadModels() {
     ['minifasnet_v2_27.enc',    'spoof27'],
     ['minifasnet_v1se_40.enc',  'spoof40'],
     ['facex_3d_landmarks.enc',  'lm3d'],
+    ['facex_tongue.enc',        'tongue'],
   ];
   const setSess = (name, s) => {
     if (name === 'det') detSess = s;
@@ -436,6 +440,7 @@ async function loadModels() {
     else if (name === 'spoof27') spoof27Sess = s;
     else if (name === 'spoof40') spoof40Sess = s;
     else if (name === 'lm3d') lm3dSess = s;
+    else if (name === 'tongue') tongueSess = s;
   };
 
   for (let i = 0; i < steps.length; i++) {
@@ -640,6 +645,31 @@ function fillSpoofTensor(box, scale, dst) {
     dst[N + i]     = g;   // G channel
     dst[2 * N + i] = r;   // R channel
   }
+}
+
+// Tongue-out classifier. 112×112 RGB normalized [-1, 1], 2-class softmax.
+// Reuses lmCv canvas since it's 112×112 already. Index 1 = tongue.
+const tongueInput = new Float32Array(3 * 112 * 112);
+async function predictTongue(box) {
+  if (!tongueSess) return 0;
+  const bw = box.x2 - box.x1, bh = box.y2 - box.y1;
+  const side = Math.max(bw, bh) * (1 + 2 * 0.15);
+  const cx = (box.x1 + box.x2) / 2, cy = (box.y1 + box.y2) / 2;
+  const sx = cx - side / 2, sy = cy - side / 2;
+  lmCtx.fillStyle = '#000';
+  lmCtx.fillRect(0, 0, 112, 112);
+  lmCtx.drawImage(video, sx, sy, side, side, 0, 0, 112, 112);
+  const img = lmCtx.getImageData(0, 0, 112, 112).data;
+  const N = 112 * 112;
+  for (let i = 0, p = 0; i < N; i++) {
+    const r = img[p++], g = img[p++], b = img[p++]; p++;
+    tongueInput[i]         = (r - 127.5) / 128;
+    tongueInput[N + i]     = (g - 127.5) / 128;
+    tongueInput[2 * N + i] = (b - 127.5) / 128;
+  }
+  const t = new ort.Tensor('float32', tongueInput, [1, 3, 112, 112]);
+  const o = await tongueSess.run({ input: t });
+  return o['prob'].data[1];   // P(tongue out)
 }
 
 async function predictSpoof(box) {
@@ -1381,7 +1411,7 @@ function drawHybrid(pts3d, matchFlag) {
   // lip (MP idx 13) and lower inner lip (idx 14), normalized by horizontal
   // mouth width (78 ↔ 308). If the ratio is high → user is sticking the
   // tongue out (or yawning) → dye the LIPS group red for visual feedback.
-  const tongueOut = isMouthWide(pts3d);
+  const tongueOut = (lastTongueProb > TONGUE_THRESH);
 
   for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
   for (const grp of [meshTopology.FACE_OVAL,
@@ -1467,7 +1497,7 @@ function drawTrue3D(pts3d, matchFlag) {
   }
 
   // (1) Full tessellation — dense mesh
-  const tongueOut = isMouthWide(pts3d);
+  const tongueOut = (lastTongueProb > TONGUE_THRESH);
 
   for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
 
@@ -1604,7 +1634,7 @@ async function tick() {
       detectMs = performance.now() - t0;
       lastFaceCount = faces.length;
       lastFaces = faces;
-      if (faces.length === 0) { lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = []; lastSim = null; lastLive = null; lastSpoof = null; emaLive = null; smoothedPts2d = []; busy = false; return; }
+      if (faces.length === 0) { lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = []; lastSim = null; lastLive = null; lastSpoof = null; emaLive = null; lastTongueProb = 0; smoothedPts2d = []; busy = false; return; }
       if (faces.length !== smoothedPts2d.length) smoothedPts2d = [];   // reset on face count change
       const t1 = performance.now();
       const all = [];
@@ -1715,12 +1745,14 @@ async function tick() {
           const t3 = performance.now();
           const sp = await predictSpoof(f);
           spoofMs = performance.now() - t3;
-          // EMA smoothing on live probability
           emaLive = (emaLive == null) ? sp.live
                                        : SPOOF_EMA * emaLive + (1 - SPOOF_EMA) * sp.live;
           lastLive = emaLive;
           lastSpoof = 1 - emaLive;
-          window.__lastRawLive = sp.live;   // for debug HUD
+          window.__lastRawLive = sp.live;
+          // Tongue-out detection on the same face (also primary only).
+          const tprob = await predictTongue(f);
+          lastTongueProb = TONGUE_EMA * lastTongueProb + (1 - TONGUE_EMA) * tprob;
         }
       }
       lmMs = (performance.now() - t1) / faces.length;
