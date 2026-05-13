@@ -1355,18 +1355,47 @@ function drawHybrid(pts3d, matchFlag) {
     ctx.stroke();
   }
 
+  // Mouth-open / tongue-out heuristic: vertical distance between upper inner
+  // lip (MP idx 13) and lower inner lip (idx 14), normalized by horizontal
+  // mouth width (78 ↔ 308). If the ratio is high → user is sticking the
+  // tongue out (or yawning) → dye the LIPS group red for visual feedback.
+  const tongueOut = isMouthWide(pts3d);
+
   for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
-  for (const grp of [meshTopology.FACE_OVAL, meshTopology.LIPS,
+  for (const grp of [meshTopology.FACE_OVAL,
                      meshTopology.LEFT_EYE, meshTopology.RIGHT_EYE,
                      meshTopology.LEFT_EYEBROW, meshTopology.RIGHT_EYEBROW,
                      meshTopology.NOSE]) {
     for (const [a, b] of grp) shadedEdge(a, b, 1.0);
+  }
+  // LIPS — red when mouth wide open (tongue likely visible)
+  if (tongueOut) {
+    const sR = baseR, sG = baseG, sB = baseB;
+    baseR = 255; baseG = 40; baseB = 70;
+    for (const [a, b] of meshTopology.LIPS) shadedEdge(a, b, 1.6);
+    baseR = sR; baseG = sG; baseB = sB;
+  } else {
+    for (const [a, b] of meshTopology.LIPS) shadedEdge(a, b, 1.0);
   }
   for (const grp of [meshTopology.LEFT_IRIS, meshTopology.RIGHT_IRIS]) {
     for (const [a, b] of grp) shadedEdge(a, b, 1.15);
   }
 
   ctx.restore();
+}
+
+// MediaPipe FaceMesh indices: 13 = upper inner lip center,
+// 14 = lower inner lip center, 78 = left inner mouth corner,
+// 308 = right inner mouth corner. Compare vertical opening to horizontal
+// mouth width — high ratio means mouth wide open / tongue out.
+function isMouthWide(pts) {
+  if (!pts || pts.length < 309) return false;
+  const u = pts[13], l = pts[14], lc = pts[78], rc = pts[308];
+  if (!u || !l || !lc || !rc) return false;
+  const mouthH = Math.abs(l[1] - u[1]);
+  const mouthW = Math.abs(rc[0] - lc[0]);
+  if (mouthW < 5) return false;
+  return (mouthH / mouthW) > 0.35;   // threshold tuned for "deliberate open"
 }
 
 // Render the true-3D mesh from 478 predicted (x,y,z) landmarks.
@@ -1416,14 +1445,24 @@ function drawTrue3D(pts3d, matchFlag) {
   }
 
   // (1) Full tessellation — dense mesh
+  const tongueOut = isMouthWide(pts3d);
+
   for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
 
   // (2) Brighter anatomical outlines on top
-  for (const grp of [meshTopology.FACE_OVAL, meshTopology.LIPS,
+  for (const grp of [meshTopology.FACE_OVAL,
                      meshTopology.LEFT_EYE, meshTopology.RIGHT_EYE,
                      meshTopology.LEFT_EYEBROW, meshTopology.RIGHT_EYEBROW,
                      meshTopology.NOSE]) {
     for (const [a, b] of grp) shadedEdge(a, b, 1.0);
+  }
+  if (tongueOut) {
+    const sR = baseR, sG = baseG, sB = baseB;
+    baseR = 255; baseG = 40; baseB = 70;
+    for (const [a, b] of meshTopology.LIPS) shadedEdge(a, b, 1.6);
+    baseR = sR; baseG = sG; baseB = sB;
+  } else {
+    for (const [a, b] of meshTopology.LIPS) shadedEdge(a, b, 1.0);
   }
   // Iris circles, very bright
   for (const grp of [meshTopology.LEFT_IRIS, meshTopology.RIGHT_IRIS]) {
