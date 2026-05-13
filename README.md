@@ -46,7 +46,7 @@ FaceX is one piece of a larger pure-C stack we built for IP-camera workloads. Ev
 | **NexusDecode** | H.264 + H.265 decoder, RTSP client | **184 KB** | 6,300 fps, **46× FFmpeg** | libav / FFmpeg |
 | **NexusEncode** | H.265/HEVC encoder | ~250 KB | x265-medium quality, 131 fps | x265 |
 | **NXV codec** | Surveillance-tuned video format | 121 KB | **3× smaller** than H.265, instant seek, change-map | H.265 + custom container |
-| **nn2** (proprietary) | YOLOv8 + MiniFASNet inference engine | 520 KB | 8.5 ms @ 320, **1.5–2× ONNX RT** | onnxruntime |
+| **nn2** | YOLOv8 + MiniFASNet inference engine | 520 KB | 8.5 ms @ 320, **1.5–2× ONNX RT** | onnxruntime |
 | **FaceX (this repo)** | Detect + landmarks + embed + spoof | 148 KB native / 17 MB WASM | 3 ms/face | dlib, FaceNet, InsightFace |
 
 **Pipeline numbers (one Intel i5 CPU):**
@@ -167,11 +167,11 @@ Measured on Intel i5-11500 (6 cores, AVX-512 + VNNI):
 
 ### Speed — anti-spoof (MiniFASNet V2+V1SE ensemble)
 
-Same model, ported to our proprietary nn2 engine:
+Same model, ported to our `nn2` C engine (Apache 2.0, source in [`nn2/`](nn2/)):
 
 | Engine | Single model | Ensemble | Speedup |
 |--------|-------------:|---------:|--------:|
-| **nn2** (ours) | **0.70 ms** | **1.43 ms** | -- |
+| **nn2** | **0.70 ms** | **1.43 ms** | -- |
 | ONNX Runtime 1.23 | 1.33 ms | 2.92 ms | **2.03× slower** |
 
 Byte-identical predictions to PyTorch / ONNX on the same input.
@@ -400,8 +400,8 @@ touch disk in plaintext on the target machine.
 ## Limitations
 
 - **Native build** — currently x86-64 (AVX2 / AVX-512 / VNNI). ARM NEON
-  paths exist; full ARM build script is on the roadmap, ESP32 / RISC-V
-  PIE 128 next.
+  paths exist in `nn2/src/gemm_neon.h`; full ARM build script is on the
+  roadmap, ESP32 / RISC-V PIE 128 next.
 - **Browser pipeline** — uses `onnxruntime-web` with WebCrypto-decrypted
   ONNX. WebGPU backend is supported by ORT but not yet wired into the
   demo; would drop inference by another 3–5×.
@@ -462,6 +462,11 @@ predictions at **2× speed** vs ONNX Runtime.
 ```
 include/                — public C API (facex.h, facex_mfn.h, ...)
 src/                    — recognition engine + AES weight crypto
+nn2/                    — pure-C YOLO + MiniFASNet inference engine
+                          (1.5–2× ONNX, Apache 2.0)
+   src/                 — gemm, conv, ops, antispoof_ops, minifasnet
+   include/             — public API headers
+   tools/               — PyTorch → .bin converters
 wasm/                   — browser demo (demo_mesh.html, encrypt tool)
    tools/encrypt_models.py — AES-256-GCM encrypt all .onnx
 docs/demo/              — GitHub Pages live demo + encrypted weights
@@ -474,9 +479,6 @@ training/               — all training pipelines, datasets, exporters
 go/facex/               — Go binding (subprocess protocol)
 python/facex/           — Python binding (ctypes)
 ```
-
-The nn2 inference engine (1.5–2× ONNX, used in commercial deployments)
-is closed-source. Contact for licensing.
 
 ---
 

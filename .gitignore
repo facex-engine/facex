@@ -21,8 +21,11 @@ training/runs/
 training/Silent-Face-Anti-Spoofing/
 training/nn2-mirror/
 
-# === Proprietary inference engine — never publish ===
-nn2/
+# nn2/ is published (Apache 2.0). Only ignore generated artifacts inside it.
+nn2/build/
+nn2/*.exe
+nn2/*.o
+nn2/weights/*.bin
 
 # === Caches ===
 __pycache__/
