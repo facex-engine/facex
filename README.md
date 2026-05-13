@@ -41,6 +41,30 @@
 
 All weights are **AES-256-GCM encrypted** and decrypted in the browser via WebCrypto. Inference stays 100% client-side.
 
+---
+
+## The full surveillance stack — no Python, no FFmpeg, no GPU
+
+FaceX is one piece of a larger pure-C stack we built for IP-camera workloads. Every component is hand-written, zero-dependency, **flashable to firmware**:
+
+| Component | What it does | Size | Speed | Replaces |
+|---|---|---|---|---|
+| **NexusDecode** | H.264 Baseline decoder | **184 KB** | 6,300 fps, **46× FFmpeg** | libav / FFmpeg |
+| **NexusEncode** | H.265 encoder | ~250 KB | x265-medium quality, 131 fps | x265 |
+| **NXV codec** | Surveillance-tuned video format | 121 KB | **3× smaller** than H.265, instant seek, change-map | H.265 + custom container |
+| **nn2** | YOLOv8 inference engine | 520 KB | 8.5 ms @ 320, **1.5× ONNX RT** | onnxruntime |
+| **FaceX (this repo)** | Detect + landmarks + embed + spoof | 148 KB native / 17 MB WASM | 3 ms/face | dlib, FaceNet, InsightFace |
+
+**Pipeline numbers (one Intel i5 CPU):**
+- Decode 30 RTSP streams + run YOLO detection on each: **0.56 ms/frame** average → **70 IP cameras on one CPU core** with motion-gating + Kalman tracking.
+- Tiered storage: 70 cams × 90 days = **49 TB → 3.3 TB** (15× savings) with NXV + selective bitstream-only archiving.
+
+**Why it matters:**
+- **Flashable** — entire NVR stack fits in **<2 MB** of binary, ARM/x86/RISC-V, no shared libraries
+- **No FFmpeg** — no GPL contamination, no surface for codec CVEs, no 28 MB of libav .so files
+- **Embedded-ready** — runs on $30 SoCs (Allwinner, Rockchip, NXP i.MX), 25 cameras on 27% CPU
+- **Standalone** — every piece can be used alone or combined: decoder → motion gate → detector → tracker → recognizer → archive
+
 ```html
 <!-- Browser: face verification in 3 lines -->
 <script src="facex-sdk.js"></script>
