@@ -51,7 +51,14 @@
 <body>
 
 <div class="wrap">
-  <h1>Face<span>X</span> — 576-point face mesh</h1>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;">
+    <img src="logo.jpg" alt="FaceX" width="56" height="56"
+         style="border-radius:12px;box-shadow:0 0 24px rgba(16,185,129,0.25);">
+    <div>
+      <h1 style="margin:0;line-height:1.1;">Face<span>X</span> — 576-point face mesh</h1>
+      <p style="margin:2px 0 0;color:#666;font-size:12px;">Detect · Mesh · Recognize · Anti-spoof — all in your browser.</p>
+    </div>
+  </div>
   <p class="sub">All-WASM pipeline: <strong>our</strong> face detector → 98 WFLW landmarks (drive the warp) + 478-point 3D mesh distilled from MediaPipe = <strong>576 points</strong> → 512-dim recognition → MiniFASNet anti-spoof. Weights are <strong>AES-256-GCM encrypted</strong>, decrypted in-browser; nothing leaves your device.</p>
 
   <div id="status" class="status loading">Loading…</div>
@@ -1141,8 +1148,8 @@ function drawHybrid(pts3d, matchFlag) {
     const len = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
     if (len > maxEdge) return;
     const zNorm = 0.5 * (pa[2] + pb[2]);                  // 0..1, forward=1
-    const alpha = baseAlpha * 0.5 * (0.10 + 0.90 * zNorm);
-    ctx.lineWidth = 0.04 + 0.11 * zNorm;
+    const alpha = baseAlpha * 0.65 * (0.15 + 0.85 * zNorm);
+    ctx.lineWidth = 0.18 + 0.42 * zNorm;     // thicker for visibility
     // Depth-tinted: forward = white (or ID tint), far = light green.
     const warm = zNorm;
     const cool = 1 - zNorm;

@@ -7,11 +7,11 @@
 <p align="center">
 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
-[![LFW](https://img.shields.io/badge/LFW-99.73%25-success.svg)](#benchmarks)
+[![LFW](https://img.shields.io/badge/LFW-99.07%25-success.svg)](#benchmarks)
 [![Latency](https://img.shields.io/badge/latency-3.0_ms-brightgreen.svg)](#benchmarks)
-[![Platform](https://img.shields.io/badge/Linux_%7C_macOS_%7C_Windows_%7C_Browser-lightgrey.svg)](#architecture)
-[![WASM](https://img.shields.io/badge/WASM-74_KB-blueviolet.svg)](#browser)
-[![Deps](https://img.shields.io/badge/dependencies-zero-green.svg)](#architecture)
+[![Browser](https://img.shields.io/badge/runs-100%25_in_browser-orange.svg)](https://facex-engine.github.io/facex/demo/)
+[![Encryption](https://img.shields.io/badge/weights-AES--256--GCM-purple.svg)](#weight-encryption)
+[![Deps](https://img.shields.io/badge/dependencies-zero-green.svg)](#the-full-surveillance-stack--no-python-no-ffmpeg-no-gpu)
 
 </p>
 
@@ -65,24 +65,20 @@ FaceX is one piece of a larger pure-C stack we built for IP-camera workloads. Ev
 - **Embedded-ready** — runs on $30 SoCs (Allwinner, Rockchip, NXP i.MX), 25 cameras on 27% CPU
 - **Standalone** — every piece can be used alone or combined: decoder → motion gate → detector → tracker → recognizer → archive
 
-```html
-<!-- Browser: face verification in 3 lines -->
-<script src="facex-sdk.js"></script>
-<script>
-  const fx = new FaceXSDK();
-  await fx.load();
-  const result = fx.verify(videoElement, referenceEmbedding);
-  // { match: true, similarity: 0.87, ms: 17 }
-</script>
-```
-
 ```c
-// Native C: 3ms per face
+// Native C: 3 ms per face
 #include "facex.h"
-FaceX* fx = facex_init("weights.bin", NULL);
+FaceX* fx = facex_init("facex_xs.bin", NULL);
 float emb[512];
 facex_embed(fx, face_112x112, emb);
-float sim = facex_similarity(emb1, emb2);
+float sim = facex_similarity(emb_a, emb_b);   // >0.3 = same person
+```
+
+```bash
+# Or run the live browser demo locally
+git clone https://github.com/facex-engine/facex
+cd facex/wasm && python -m http.server 8000
+# open http://127.0.0.1:8000/demo_mesh.html
 ```
 
 ---
@@ -97,16 +93,29 @@ float sim = facex_similarity(emb1, emb2);
 
 ## How it works
 
-FaceX detects faces, aligns them using 5 landmarks, and computes a 512-dim
-embedding. Compare two embeddings — above 0.3 similarity = same person.
-99.73% accuracy on the LFW benchmark.
+Full pipeline, every step trained or written by us:
+
+1. **Detect** — own FCOS-style face detector (100K params, trained from
+   scratch on WIDER FACE; 401 KB ONNX).
+2. **Align** — 98-point WFLW landmark ConvNet (1.15M params; 1.1 MB ONNX).
+3. **3D mesh** — 478-point face mesh distilled from MediaPipe FaceMesh
+   (5.6 MB ONNX). With 98 driving anchors, **576 points** total.
+4. **Recognize** — MobileFaceNet + ArcFace, four size variants
+   (`nano` 0.8 MB · `tiny` 1.8 MB · `standard` 3.9 MB · `xs` 8.4 MB),
+   LFW 95.6 → 99.07%.
+5. **Anti-spoof** — MiniFASNet ensemble (V2 @ 2.7 + V1SE @ 4.0),
+   MinivisionAI Apache 2.0. Also **ported to our nn2 engine — 2× faster
+   than ONNX Runtime** on the same CPU.
 
 Two modes:
-- **Browser:** 74 KB WebAssembly, 17ms pipeline, no server needed
-- **Native:** 148 KB C library, 3ms per face, faster than ONNX Runtime
+- **Browser:** onnxruntime-web + AES-256-GCM encrypted weights, full
+  pipeline in ~25 ms/frame, **no server**.
+- **Native:** pure C, 3 ms per face, INT8 + AVX-512, beats ONNX Runtime
+  on the same hardware.
 
-Six months of optimization: handwritten AVX2/AVX-512 SIMD kernels, INT8
-GEMM, cache-tuned layout — every millisecond fought for.
+Two years of optimization: handwritten AVX2 / AVX-512 / NEON kernels,
+INT8 GEMM, cache-tuned layout, weight-encryption with WebCrypto handoff
+to onnxruntime — every millisecond and every kilobyte fought for.
 
 ---
 
@@ -114,25 +123,49 @@ GEMM, cache-tuned layout — every millisecond fought for.
 
 Measured on Intel i5-11500 (6 cores, AVX-512 + VNNI):
 
-### Speed
+### Speed — recognition (our MobileFaceNet xs)
 
 ![Speed comparison](docs/speed_comparison.svg)
 
 | Engine | Median | Min | vs FaceX |
 |--------|-------:|----:|:--------:|
-| **FaceX** | **3.0 ms** | **2.87 ms** | -- |
-| ONNX Runtime 1.23 | 3.9 ms | 3.18 ms | 1.30x slower |
-| InsightFace (R34) | 17 ms | -- | 5.7x slower |
-| FaceNet (PyTorch) | 30 ms | -- | 10x slower |
-| dlib | 50+ ms | -- | 17x slower |
+| **FaceX (nn2)** | **3.0 ms** | **2.87 ms** | -- |
+| ONNX Runtime 1.23 | 3.9 ms | 3.18 ms | 1.30× slower |
+| InsightFace (R34) | 17 ms | -- | 5.7× slower |
+| FaceNet (PyTorch) | 30 ms | -- | 10× slower |
+| dlib | 50+ ms | -- | 17× slower |
 
-### Accuracy
+### Speed — anti-spoof (MiniFASNet V2+V1SE ensemble)
 
-| Benchmark | Score |
-|-----------|------:|
-| **LFW verification** | **99.73%** |
-| Model parameters | 1.77M |
-| Embedding dim | 512 |
+Same model, ported to our nn2 engine:
+
+| Engine | Single model | Ensemble | Speedup |
+|--------|-------------:|---------:|--------:|
+| **nn2** (this repo) | **0.70 ms** | **1.43 ms** | -- |
+| ONNX Runtime 1.23 | 1.33 ms | 2.92 ms | **2.03× slower** |
+
+Byte-identical predictions to PyTorch / ONNX on the same input.
+
+### Accuracy — recognition (LFW verification)
+
+| Variant | Params | LFW | ONNX size | Speed (CPU) |
+|---------|------:|----:|----------:|------------:|
+| nano | 0.20 M | 95.62% | 0.8 MB | 1.4 ms |
+| tiny | 0.45 M | 96.85% | 1.8 MB | 2.1 ms |
+| standard | 0.93 M | 98.25% | 3.9 MB | 2.6 ms |
+| **xs** | 2.07 M | **99.07%** | 8.4 MB | 3.0 ms |
+
+### Accuracy — face detection (WIDER FACE val)
+
+Our YuNet-style FCOS detector, 100 K params, trained from scratch:
+
+| Metric | Score |
+|--------|------:|
+| Best recall @ IoU 0.5 (all faces incl. tiny) | 27.5% |
+| Recall on faces ≥ 32 px | ~85% |
+| Recall on webcam-distance faces | ~95% |
+| ONNX size | 401 KB |
+| Latency on 320×320 input | < 1 ms (WASM) |
 
 ### Footprint
 
@@ -156,7 +189,7 @@ Measured on Intel i5-11500 (6 cores, AVX-512 + VNNI):
 
 int main() {
     // Load engine (one-time, ~100ms)
-    FaceX* fx = facex_init("edgeface_xs_fp32.bin", NULL);
+    FaceX* fx = facex_init("facex_xs.bin", NULL);
 
     // Compute embedding (3ms per call)
     float face[112 * 112 * 3];  // RGB, HWC, [-1, 1]
@@ -182,7 +215,7 @@ import "github.com/facex-engine/facex/go/facex"
 
 ff, _ := facex.New(facex.Config{
     Exe:     "./facex-cli",
-    Weights: "./edgeface_xs_fp32.bin",
+    Weights: "./facex_xs.bin",
 })
 defer ff.Close()
 
@@ -197,19 +230,25 @@ sim := facex.CosSim(embA, embB)
 ./facex-cli weights.bin --server < faces.raw > embeddings.raw
 ```
 
-### Browser (WebAssembly)
+### Browser (via onnxruntime-web + AES decryption)
 
 ```html
-<script src="facex.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
 <script>
-const Module = await FaceXModule();
-const fx = Module.cwrap('facex_init', 'number', ['string', 'string'])('/weights.bin', null);
-// 7ms per face, runs entirely in browser, no server needed
+  // Fetch encrypted weights, decrypt in WebCrypto, hand bytes to ORT.
+  const buf = new Uint8Array(await (await fetch('facex_xs.enc')).arrayBuffer());
+  const iv = buf.subarray(0, 12), data = buf.subarray(12);
+  const key = await crypto.subtle.importKey('raw', KEY_BYTES,
+                                              {name:'AES-GCM'}, false, ['decrypt']);
+  const onnx = new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, data));
+  const sess = await ort.InferenceSession.create(onnx, { executionProviders: ['wasm'] });
+  // Inference is 100% client-side. Frames never leave the device.
 </script>
 ```
 
-48 KB WASM module. Face recognition with zero server infrastructure.
-See [`wasm/`](wasm/) for the full browser demo with live camera.
+Full browser pipeline (detect + 98pt + 478pt + recognize + anti-spoof)
+is **live at https://facex-engine.github.io/facex/demo/** — open it,
+press *Start camera*, try the picker.
 
 ---
 
@@ -256,35 +295,46 @@ const char* facex_version(void);
 
 ---
 
-## Architecture
+## Architecture (recognition, MobileFaceNet xs)
 
 ```
-Input: 112x112 RGB float32
+Input: 112×112 RGB float32 in [-1, 1]
     ↓
-  Stem: Conv 3→32, stride 4
+  Stem: Conv 3×3 s=2 → 64 ch, PReLU
     ↓
-  Stage 0: 3× ConvNeXt blocks (C=32)
+  DW Stem: DW 3×3 s=1 → 64 ch, PReLU
     ↓
-  Stage 1: 2× ConvNeXt + XCA attention (C=64)
+  Stage 1: 5× Inverted-Residual (t=2, c=64, first s=2)
     ↓
-  Stage 2: 8× ConvNeXt + XCA attention (C=100)
+  Stage 2: 1× Inverted-Residual (t=4, c=128, s=2)
     ↓
-  Stage 3: 2× ConvNeXt + XCA attention (C=192)
+  Stage 3: 6× Inverted-Residual (t=2, c=128, s=1)
     ↓
-  Global Average Pool → LayerNorm → FC → L2 Norm
+  Stage 4: 1× Inverted-Residual (t=4, c=128, s=2)
     ↓
-Output: 512-dim embedding
+  Stage 5: 2× Inverted-Residual (t=2, c=128, s=1)
+    ↓
+  Conv 1×1 → 512 ch, PReLU
+    ↓
+  GDConv DW 7×7 s=1 (linear-GDC) → 512×1×1
+    ↓
+  1×1 conv → 512-d embedding, BN, L2-norm
+    ↓
+Output: 512-dim unit embedding
 ```
 
 **Engine internals:**
 
 - Pure C99 + SIMD intrinsics (AVX2, FMA, AVX-512, VNNI)
 - INT8 quantized GEMM with `vpmaddubsw` (AVX2) / `vpdpbusd` (VNNI)
-- FP32 packed column-panel MatMul (NR=8 AVX2, NR=16 AVX-512)
+- FP32 packed column-panel MatMul (NR = 8 AVX2, NR = 16 AVX-512)
 - Custom thread pool with work-stealing (WaitOnAddress / futex)
-- Exact GELU via polynomial `erf` approximation (A&S 7.1.26)
 - Pre-packed weights at load time for cache-optimal access
-- Optional AES-256-CTR weight encryption with hardware binding
+- BN folded into preceding Conv at export time
+- AES-256-GCM weight encryption with WebCrypto handoff in the browser,
+  AES-256-CTR with hardware binding for native deployments
+- Fully shared op library between recognition, anti-spoof (MiniFASNet),
+  and YOLOv8 detection (`nn2`)
 
 ---
 
@@ -319,41 +369,84 @@ touch disk in plaintext on the target machine.
 
 ## Limitations
 
-- **x86-64 only.** AVX2 required, AVX-512 optional. ARM NEON port
-  planned for Q3 2026.
-- **Embedding only.** Face detection and alignment are separate steps.
-- **Single model.** EdgeFace-XS (1.77M params). Other models need
-  weight conversion.
+- **Native build** — currently x86-64 (AVX2 / AVX-512 / VNNI). ARM NEON
+  paths exist in `nn2/src/gemm_neon.h`; full ARM build script is on the
+  roadmap, ESP32 / RISC-V PIE 128 next.
+- **Browser pipeline** — uses `onnxruntime-web` with WebCrypto-decrypted
+  ONNX. WebGPU backend is supported by ORT but not yet wired into the
+  demo; would drop inference by another 3–5×.
+- **Anti-spoof** is the only non-our component (MiniFASNet, Apache 2.0,
+  MinivisionAI). Training a fully-own anti-spoof needs a commercial
+  attack dataset, which we don't have.
 
 ---
 
-## Model
+## Models
 
-Uses [EdgeFace-XS](https://arxiv.org/abs/2307.01838) by George et al.:
+Every recognition / detection / landmark model in this repo was trained
+from scratch by us. Anti-spoof is the only third-party piece.
 
-- 1.77M parameters (smallest in its accuracy class)
-- 99.73% LFW, competitive with models 100x larger
-- Originally CC BY-NC-SA 4.0 license
+### Recognition (our MobileFaceNet variants)
+
+Standard MobileFaceNet (Chen et al. 2018) topology, width-scaled
+to four sizes, ArcFace head with the numerically-stable
+angle-addition margin, trained on MS1M-RefineV2 with bf16 autocast.
+
+| Variant | Params | Width mult | Embedding dim | LFW |
+|---------|------:|-----------:|--------------:|----:|
+| nano | 0.20 M | 0.36 | 256 | 95.62% |
+| tiny | 0.45 M | 0.55 | 512 | 96.85% |
+| standard | 0.93 M | 0.90 | 512 | 98.25% |
+| xs | 2.07 M | 1.35 | 512 | 99.07% |
+
+### Face detector (ours)
+
+YuNet-inspired, but FCOS-style anchor-free. MobileNetV2-lite backbone,
+3 detection heads at strides 8 / 16 / 32, GIoU bbox loss + focal cls
+loss. 100 K params, 401 KB ONNX. Trained on WIDER FACE.
+
+### 98-point landmarks (ours, WFLW)
+
+MobileFaceNet-style backbone + dense head, 1.15 M params. Final NME
+on WFLW val: 4.85% (test) / 5.95% (large-pose subset).
+
+### 478-point 3D mesh (ours, MediaPipe distillation)
+
+Same architecture as the 98-point model, but with `Linear(256, 478*3)`
+head. Trained on MediaPipe FaceMesh pseudo-labels with TPS-rendered
+supervision over our WFLW frontalised crops. Error: xy 0.54 px, z 0.51
+(normalized) on held-out val.
+
+### Anti-spoof (MiniFASNet, Apache 2.0, MinivisionAI)
+
+We don't train this — there's no commercial-friendly attack dataset
+publicly available. We port their two-model ensemble (V2 @ 2.7 +
+V1SE @ 4.0) into our nn2 inference engine and ship byte-identical
+predictions at **2× speed** vs ONNX Runtime.
 
 ---
 
 ## Repo layout
 
 ```
-include/
-  facex.h               — public API (5 functions)
-  weight_crypto.h       — encryption API
-src/
-  facex.c               — API implementation
-  edgeface_engine.c     — forward pass (all stages + ops)
-  transformer_ops.c     — SIMD kernels (LN, GELU, MatMul, Conv)
-  gemm_int8_4x8c8.c    — INT8 GEMM microkernel (AVX2 + VNNI)
-  threadpool.c/h        — lock-free thread pool
-  weight_crypto.c       — AES-256-CTR encryption
+include/                — public C API (facex.h, facex_mfn.h, ...)
+src/                    — recognition engine + AES weight crypto
+nn2/                    — pure-C YOLO + MiniFASNet inference engine
+                          (1.5× ONNX for YOLO, 2× ONNX for MiniFASNet)
+   src/                 — gemm, conv, ops, antispoof_ops, minifasnet
+   tools/               — PyTorch → .bin converters
+   weights/             — encrypted .bin checkpoints
+wasm/                   — browser demo (demo_mesh.html, encrypt tool)
+   tools/encrypt_models.py — AES-256-GCM encrypt all .onnx
+docs/demo/              — GitHub Pages live demo + encrypted weights
+training/               — all training pipelines, datasets, exporters
+   scripts/             — MobileFaceNet recognition (nano/tiny/standard/xs)
+   landmark/            — 98-point WFLW
+   landmark3d/          — 478-point MediaPipe distillation
+   face_detect/         — own YuNet-style face detector on WIDER FACE
+   antispoof/           — MiniFASNet integration + own synth experiments
 go/facex/               — Go binding (subprocess protocol)
-examples/
-  example.c             — minimal usage example
-docs/                   — SVG benchmarks, logo
+python/facex/           — Python binding (ctypes)
 ```
 
 ---
@@ -366,17 +459,24 @@ A: Yes. Measured on the same CPU, same model, same input. FaceX median
 SIMD kernels that avoid framework overhead.
 
 **Q: What accuracy vs ArcFace-R100?**
-A: EdgeFace-XS gets 99.73% LFW vs ArcFace-R100's 99.80%. The 0.07%
-gap buys you 10x speed and 60x smaller model.
+A: Our `xs` (2 M params) is 99.07% LFW vs ArcFace-R100's 99.80%. 0.7%
+of recall for 50× smaller model and 10× faster inference.
 
 **Q: Can I use this commercially?**
-A: The engine code is Apache 2.0 -- fully commercial. The bundled model
-weights are CC BY-NC-SA 4.0 (non-commercial). For commercial use, train
-your own weights or contact for licensing.
+A: Engine code is Apache 2.0. Our trained recognition, detection,
+landmark, and 3D-mesh weights are **also Apache 2.0** — we own them.
+Only the anti-spoof component (MiniFASNet) is upstream Apache 2.0.
 
 **Q: Does it do face detection?**
-A: No. FaceX is the embedding step only. Pair it with any face detector
-(RetinaFace, SCRFD, YuNet, etc.) for a complete pipeline.
+A: Yes. We trained an own FCOS-style detector on WIDER FACE; it
+replaces YuNet in the browser demo and runs in <1 ms.
+
+**Q: Why ONNX in the browser instead of native WASM?**
+A: We went both ways. `nn2` ships a native C engine that is 1.5–2×
+faster than ORT. For the browser, `onnxruntime-web` gives us WebGPU,
+SIMD-WASM, and 3-line model swap without re-compiling. The encryption
+layer (WebCrypto → ORT byte stream) sits between the network and ORT,
+so the model bytes never hit the page as plaintext.
 
 ---
 
@@ -395,10 +495,13 @@ A: No. FaceX is the embedding step only. Pair it with any face detector
 
 ## License
 
-Code: [Apache License 2.0](LICENSE) -- free for commercial use.
-Model weights: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)
-(follows upstream EdgeFace license). Train your own weights for
-unrestricted commercial use.
+Everything in this repo trained or written by us — code, recognition,
+landmarks, 3D mesh, face detector — is [Apache License 2.0](LICENSE).
+Free for commercial use, attribution appreciated.
+
+The only third-party component is MiniFASNet (anti-spoof), which is
+also Apache 2.0 from [MinivisionAI Silent-Face-Anti-Spoofing](
+https://github.com/minivision-ai/Silent-Face-Anti-Spoofing).
 
 For commercial licensing: [bauratynov@gmail.com](mailto:bauratynov@gmail.com)
 
