@@ -199,6 +199,7 @@
     <span class="chip ours">✦ ours <span class="num">1.1MB</span> <span class="src">98pt landmarks</span></span>
     <span class="chip ours">✦ ours <span class="num">5.6MB</span> <span class="src">478pt 3D mesh</span></span>
     <span class="chip ours">✦ ours <span class="num">1.8MB</span> <span class="src">recognition</span></span>
+    <span class="chip ours">✦ ours <span class="num">187KB</span> <span class="src">tongue</span></span>
     <span class="chip apache">Apache <span class="num">3.4MB</span> <span class="src">anti-spoof</span></span>
   </div>
 
@@ -220,6 +221,7 @@
     <div class="pick" data-mode="holo">holo</div>
     <div class="pick" data-mode="detect">detect only</div>
     <div class="pick" data-mode="faceid">face ID</div>
+    <div class="pick" data-mode="liveness">liveness ✓</div>
     <div class="pick" data-mode="off">off</div>
   </div>
 
@@ -227,6 +229,7 @@
     <button id="btnStart" class="btn primary" disabled>Start camera</button>
     <button id="btnLock"  class="btn" disabled>Lock to me</button>
     <button id="btnUnlock" class="btn" disabled style="display:none">Unlock</button>
+    <button id="btnSnap"  class="btn" disabled>📸 Snapshot</button>
     <button id="btnStop"  class="btn" disabled>Stop</button>
   </div>
 
@@ -260,6 +263,7 @@ const statusEl = $('status');
 const btnStart = $('btnStart');
 const btnLock  = $('btnLock');
 const btnUnlock = $('btnUnlock');
+const btnSnap = $('btnSnap');
 const btnStop = $('btnStop');
 
 let detSess = null, lmSess = null, recSess = null, lm3dSess = null, spoof27Sess = null, spoof40Sess = null, tongueSess = null, meshTopology = null, stream = null, running = false;
@@ -279,6 +283,18 @@ let spoofMs = 0;
 let lastTongueProb = 0;                 // EMA-smoothed P(tongue out) from tongue classifier
 const TONGUE_EMA = 0.6;
 const TONGUE_THRESH = 0.6;              // tuned for the F1=0.96 model
+let tongueMs = 0;
+
+// Eye-blink detection (EAR — Eye Aspect Ratio) from our 98-pt WFLW landmarks.
+// WFLW eye indices: left eye 60..67 (8 pts), right eye 68..75 (8 pts).
+// Open eye: H/W ~ 0.30. Closed: < 0.15.
+const BLINK_THRESH = 0.18;
+let blinkOn = false;            // currently in a blink (debounce)
+let blinkCount = 0;             // session blink counter
+let blinkFlashUntil = 0;        // ms timestamp to keep BLINK label visible
+
+// Active liveness challenge
+let liveness = { step: 'idle', startedAt: 0, instruction: '', basePts: null, passed: false, failed: false };
 // EMA smoothing for spoof probability — antispoof can flicker on partial occlusion
 let emaLive = null;
 const SPOOF_EMA = 0.65;            // higher → smoother
@@ -513,6 +529,123 @@ function drawSpoofOverlay(w, h) {
   ctx.textBaseline = 'middle';
   ctx.fillText('presentation attack detected', w / 2, h / 2 + Math.min(w, h) * 0.18);
   ctx.restore();
+}
+
+// ===== Eye Aspect Ratio (Soukupová & Čech) from our 98-pt WFLW landmarks =====
+// WFLW eye indices: left 60..67 (8 pts), right 68..75 (8 pts).
+// We take 4 representative points per eye to approximate height/width.
+function eyeEAR(pts, base) {
+  // base = 60 (left) or 68 (right)
+  const p0 = pts[base], p4 = pts[base + 4];               // outer/inner corners
+  const p2 = pts[base + 2], p6 = pts[base + 6];           // top, bottom mid
+  const w = Math.hypot(p4[0] - p0[0], p4[1] - p0[1]);
+  const h = Math.hypot(p6[0] - p2[0], p6[1] - p2[1]);
+  return w > 1 ? h / w : 0;
+}
+function computeEAR(pts98) {
+  if (!pts98 || pts98.length < 76) return 1;
+  return 0.5 * (eyeEAR(pts98, 60) + eyeEAR(pts98, 68));
+}
+
+// ===== Active liveness challenge =====
+// Picks a random task ("Turn left", "Turn right", "Look up", "Blink twice")
+// and watches the 98-pt landmarks of the primary face. The challenge runs
+// in the "liveness" picker mode.
+const LIVENESS_TIMEOUT_MS = 5000;
+function startLiveness() {
+  const tasks = ['LEFT', 'RIGHT', 'UP', 'BLINK'];
+  liveness = {
+    step: 'running',
+    startedAt: performance.now(),
+    instruction: tasks[(Math.random() * tasks.length) | 0],
+    basePts: null, baseBlinks: blinkCount,
+    passed: false, failed: false,
+  };
+}
+function updateLiveness(pts98) {
+  if (liveness.step !== 'running') return;
+  if (!pts98 || pts98.length < 98) return;
+  const elapsed = performance.now() - liveness.startedAt;
+  if (elapsed > LIVENESS_TIMEOUT_MS) {
+    liveness.step = 'done'; liveness.failed = true; return;
+  }
+  // Anchor measurements: nose tip ~ pt 54; face contour width = 0..32.
+  const nose = pts98[54];
+  const left = pts98[0], right = pts98[32];
+  const top = pts98[33], chin = pts98[16];
+  const faceW = Math.hypot(right[0] - left[0], right[1] - left[1]);
+  const faceH = Math.hypot(chin[0] - top[0], chin[1] - top[1]);
+  const faceCx = 0.5 * (left[0] + right[0]);
+  const faceCy = 0.5 * (top[1] + chin[1]);
+
+  if (liveness.basePts == null) {
+    liveness.basePts = { nx: (nose[0] - faceCx) / faceW, ny: (nose[1] - faceCy) / faceH };
+  }
+  const cur = { nx: (nose[0] - faceCx) / faceW, ny: (nose[1] - faceCy) / faceH };
+  const dx = cur.nx - liveness.basePts.nx;
+  const dy = cur.ny - liveness.basePts.ny;
+
+  let pass = false;
+  // Note: overlay is mirrored (video transform scaleX(-1)) so user moving
+  // physically left appears moving right in the unmirrored coord system.
+  if (liveness.instruction === 'LEFT' && dx >  0.10) pass = true;
+  if (liveness.instruction === 'RIGHT' && dx < -0.10) pass = true;
+  if (liveness.instruction === 'UP' && dy < -0.10) pass = true;
+  if (liveness.instruction === 'BLINK' && blinkCount - liveness.baseBlinks >= 2) pass = true;
+  if (pass) { liveness.step = 'done'; liveness.passed = true; }
+}
+function drawLivenessOverlay(w, h) {
+  if (liveness.step === 'idle') {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#10b981'; ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Press "Liveness ✓" again to start a challenge', w/2, h/2);
+    return;
+  }
+  if (liveness.step === 'running') {
+    const elapsed = (performance.now() - liveness.startedAt) / 1000;
+    const remaining = Math.max(0, LIVENESS_TIMEOUT_MS/1000 - elapsed);
+    const arrow = { LEFT: '←', RIGHT: '→', UP: '↑', BLINK: '👁 BLINK TWICE' }[liveness.instruction];
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, w, 110);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 56px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${arrow}`, w/2, 55);
+    ctx.font = 'bold 14px monospace';
+    ctx.fillStyle = '#10b981';
+    ctx.fillText(`${remaining.toFixed(1)}s`, w/2, 92);
+    return;
+  }
+  if (liveness.step === 'done') {
+    const color = liveness.passed ? '#10b981' : '#ef4444';
+    const text = liveness.passed ? 'LIVE ✓ HUMAN' : 'TIMEOUT ✗';
+    ctx.fillStyle = liveness.passed ? 'rgba(5,46,22,0.85)' : 'rgba(28,10,10,0.85)';
+    ctx.fillRect(0, h/2 - 80, w, 160);
+    ctx.fillStyle = color; ctx.font = 'bold 56px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, w/2, h/2);
+  }
+}
+
+// ===== Snapshot (compose video + overlay → PNG) =====
+function snapshotPNG() {
+  const w = overlay.clientWidth || 640, h = overlay.clientHeight || 480;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cx = c.getContext('2d');
+  cx.save(); cx.translate(w, 0); cx.scale(-1, 1);
+  cx.drawImage(video, 0, 0, w, h);  // mirrored video
+  cx.restore();
+  cx.drawImage(overlay, 0, 0, w, h);  // overlay on top, not mirrored
+  c.toBlob((blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `facex_${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, 'image/png');
 }
 
 // Mesh sanity check: if too many mesh points have escaped well outside the
@@ -1751,7 +1884,9 @@ async function tick() {
           lastSpoof = 1 - emaLive;
           window.__lastRawLive = sp.live;
           // Tongue-out detection on the same face (also primary only).
+          const t4 = performance.now();
           const tprob = await predictTongue(f);
+          tongueMs = performance.now() - t4;
           lastTongueProb = TONGUE_EMA * lastTongueProb + (1 - TONGUE_EMA) * tprob;
         }
       }
@@ -1760,6 +1895,21 @@ async function tick() {
       last3D = all3d;
       lastHybrid = allHybrid;
       lastFaceMatch = matchFlags;
+
+      // Eye-blink detection on the primary face (no ML — EAR from 98pt landmarks)
+      if (all.length > 0) {
+        const ear = computeEAR(all[0]);
+        if (ear < BLINK_THRESH && !blinkOn) {
+          blinkOn = true;
+          blinkCount++;
+          blinkFlashUntil = performance.now() + 350;
+        } else if (ear > BLINK_THRESH + 0.04) {
+          blinkOn = false;
+        }
+      }
+
+      // Active liveness tracker: feed primary face position
+      if (mode === 'liveness' && all.length > 0) updateLiveness(all[0]);
       // overall sim = max across faces (best match)
       lastSim = sims.some(s => s != null) ? Math.max(...sims.filter(s => s != null)) : null;
       busy = false;
@@ -1828,7 +1978,9 @@ async function tick() {
   }
   const isSpoof = lastLive != null && lastFaceCount > 0 && lastLive < SPOOF_THRESH;
 
-  if (isSpoof) {
+  if (mode === 'liveness') {
+    drawLivenessOverlay(w, h);
+  } else if (isSpoof) {
     // Skip mesh entirely on spoof — paint a big diagonal SPOOF warning instead.
     drawSpoofOverlay(w, h);
   } else if (mode === 'detect' || mode === 'faceid') {
@@ -1858,6 +2010,8 @@ async function tick() {
     `faces ${lastFaceCount}`,
     `det ${detectMs.toFixed(0)}ms`,
     `lm ${lmMs.toFixed(0)}ms`,
+    `spoof ${spoofMs.toFixed(0)}ms`,
+    `tongue ${tongueMs.toFixed(0)}ms`,
     `${fps} fps`,
   ];
   if (refEmb) {
@@ -1874,12 +2028,19 @@ async function tick() {
     const label = isLive ? `LIVE ${pct}%` : `SPOOF ${(lastSpoof*100).toFixed(0)}%`;
     const color = isLive ? '#10b981' : '#ef4444';
     tags.push(`<span style="color:${color}">${label}</span>`);
-    const raw = window.__lastRawLive;
-    if (raw != null) tags.push(`raw L=${(raw*100).toFixed(1)}%`);
   }
+  if (lastTongueProb > TONGUE_THRESH && lastFaceCount > 0) {
+    tags.push(`<span style="color:#ef4444">👅 TONGUE ${(lastTongueProb*100).toFixed(0)}%</span>`);
+  }
+  if (performance.now() < blinkFlashUntil) {
+    tags.push(`<span style="color:#60a5fa">👁 BLINK</span>`);
+  }
+  if (blinkCount > 0) tags.push(`blinks: ${blinkCount}`);
   setHUD(tags);
   requestAnimationFrame(tick);
 }
+
+btnSnap.onclick = () => snapshotPNG();
 
 // Mode picker (the first picker row)
 document.querySelectorAll('#picker .pick').forEach(p => {
@@ -1887,6 +2048,10 @@ document.querySelectorAll('#picker .pick').forEach(p => {
     document.querySelectorAll('#picker .pick').forEach(x => x.classList.remove('active'));
     p.classList.add('active');
     mode = p.dataset.mode;
+    // Liveness mode: starting (or restarting on repeat click) launches a challenge
+    if (mode === 'liveness') {
+      if (liveness.step === 'idle' || liveness.step === 'done') startLiveness();
+    }
   });
 });
 
@@ -1899,6 +2064,7 @@ btnStart.onclick = async () => {
     await new Promise(r => video.onloadedmetadata = r);
     btnStart.disabled = true;
     btnLock.disabled = false;
+    btnSnap.disabled = false;
     btnStop.disabled = false;
     setStatus(`camera ${video.videoWidth}x${video.videoHeight}`, 'ready');
     running = true;
