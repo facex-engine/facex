@@ -21,6 +21,9 @@ training/runs/
 training/Silent-Face-Anti-Spoofing/
 training/nn2-mirror/
 
+# === Proprietary inference engine — never publish ===
+nn2/
+
 # === Caches ===
 __pycache__/
 *.pyc
