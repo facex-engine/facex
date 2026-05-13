@@ -473,6 +473,43 @@ async function loadModels() {
   console.log(`hybrid template: T shape ${hy.T.length / 98} x 98, topology: ${meshTopology.TESSELATION.length} tess edges`);
 }
 
+// Big diagonal SPOOF warning across the canvas. Replaces the mesh when
+// the antispoof model is convinced the user is presenting a photo/screen.
+function drawSpoofOverlay(w, h) {
+  // Dim red wash
+  ctx.fillStyle = 'rgba(40, 0, 0, 0.35)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Two crossed diagonal corner bars for that "warning tape" feel
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-Math.PI / 6);   // -30°
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const fontSize = Math.max(64, Math.min(w, h) * 0.22);
+  ctx.font = `900 ${fontSize}px -apple-system, BlinkMacSystemFont, Inter, sans-serif`;
+  // Outer glow
+  ctx.shadowColor = 'rgba(239, 68, 68, 0.9)';
+  ctx.shadowBlur = 32;
+  ctx.fillStyle = 'rgba(239, 68, 68, 0.95)';
+  ctx.fillText('SPOOF', 0, 0);
+  // White outline on top
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.strokeText('SPOOF', 0, 0);
+  ctx.restore();
+
+  // Smaller subtitle below
+  ctx.save();
+  ctx.font = `600 ${Math.max(14, Math.min(w, h) * 0.028)}px ui-monospace, monospace`;
+  ctx.fillStyle = 'rgba(255, 240, 240, 0.85)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('presentation attack detected', w / 2, h / 2 + Math.min(w, h) * 0.18);
+  ctx.restore();
+}
+
 // Cosine similarity between two normalized vectors
 function cosSim(a, b) {
   let s = 0;
@@ -1696,7 +1733,12 @@ async function tick() {
       for (const [x1, y1, x2, y2] of bbox2ds) ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     }
   }
-  if (mode === 'detect' || mode === 'faceid') {
+  const isSpoof = lastLive != null && lastFaceCount > 0 && lastLive < SPOOF_THRESH;
+
+  if (isSpoof) {
+    // Skip mesh entirely on spoof — paint a big diagonal SPOOF warning instead.
+    drawSpoofOverlay(w, h);
+  } else if (mode === 'detect' || mode === 'faceid') {
     // nothing else — bbox already drawn above
   } else if (mode === 'hybrid' && lastHybrid.length) {
     for (let i = 0; i < lastHybrid.length; i++) drawHybrid(lastHybrid[i], lastFaceMatch[i]);
