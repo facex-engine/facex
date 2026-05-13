@@ -1,0 +1,168 @@
+
+=== run: ep=15 batch=384 ===
+  ep 1 it 50/148 loss 0.554 679 img/s lr 9.80e-05
+  ep 1 it 100/148 loss 0.205 813 img/s lr 1.98e-04
+ep 1/15  test_acc 95.57%  err 4.43%  time 1.4min  lr 2.94e-04
+  -> new best acc 95.57%
+  ep 2 it 50/148 loss 0.029 930 img/s lr 3.94e-04
+  ep 2 it 100/148 loss 0.028 942 img/s lr 4.94e-04
+ep 2/15  test_acc 99.33%  err 0.67%  time 1.1min  lr 5.90e-04
+  -> new best acc 99.33%
+  ep 3 it 50/148 loss 0.012 471 img/s lr 6.90e-04
+  ep 3 it 100/148 loss 0.020 475 img/s lr 7.90e-04
+ep 3/15  test_acc 99.60%  err 0.40%  time 2.0min  lr 8.86e-04
+  -> new best acc 99.60%
+  ep 4 it 50/148 loss 0.010 458 img/s lr 9.86e-04
+  ep 4 it 100/148 loss 0.004 468 img/s lr 9.98e-04
+ep 4/15  test_acc 99.83%  err 0.17%  time 2.0min  lr 9.93e-04
+  -> new best acc 99.83%
+  ep 5 it 50/148 loss 0.008 473 img/s lr 9.84e-04
+  ep 5 it 100/148 loss 0.001 476 img/s lr 9.70e-04
+ep 5/15  test_acc 99.83%  err 0.17%  time 2.0min  lr 9.53e-04
+  ep 6 it 50/148 loss 0.003 475 img/s lr 9.32e-04
+  ep 6 it 100/148 loss 0.002 484 img/s lr 9.07e-04
+ep 6/15  test_acc 99.97%  err 0.03%  time 2.1min  lr 8.80e-04
+  -> new best acc 99.97%
+  ep 7 it 50/148 loss 0.000 475 img/s lr 8.49e-04
+  ep 7 it 100/148 loss 0.000 477 img/s lr 8.15e-04
+ep 7/15  test_acc 99.80%  err 0.20%  time 2.0min  lr 7.80e-04
+  ep 8 it 50/148 loss 0.004 474 img/s lr 7.41e-04
+  ep 8 it 100/148 loss 0.000 477 img/s lr 7.00e-04
+ep 8/15  test_acc 99.93%  err 0.07%  time 2.0min  lr 6.59e-04
+  ep 9 it 50/148 loss 0.000 476 img/s lr 6.15e-04
+  ep 9 it 100/148 loss 0.000 477 img/s lr 5.71e-04
+ep 9/15  test_acc 99.90%  err 0.10%  time 2.0min  lr 5.27e-04
+  ep 10 it 50/148 loss 0.000 475 img/s lr 4.81e-04
+  ep 10 it 100/148 loss 0.001 477 img/s lr 4.36e-04
+ep 10/15  test_acc 99.87%  err 0.13%  time 2.0min  lr 3.93e-04
+  ep 11 it 50/148 loss 0.000 478 img/s lr 3.49e-04
+  ep 11 it 100/148 loss 0.000 479 img/s lr 3.06e-04
+ep 11/15  test_acc 99.90%  err 0.10%  time 2.0min  lr 2.66e-04
+  ep 12 it 50/148 loss 0.000 474 img/s lr 2.27e-04
+  ep 12 it 100/148 loss 0.001 477 img/s lr 1.90e-04
+ep 12/15  test_acc 99.90%  err 0.10%  time 2.0min  lr 1.57e-04
+  ep 13 it 50/148 loss 0.000 458 img/s lr 1.25e-04
+  ep 13 it 100/148 loss 0.000 463 img/s lr 9.69e-05
+ep 13/15  test_acc 99.87%  err 0.13%  time 2.1min  lr 7.27e-05
+  ep 14 it 50/148 loss 0.000 457 img/s lr 5.10e-05
+  ep 14 it 100/148 loss 0.000 465 img/s lr 3.30e-05
+ep 14/15  test_acc 99.90%  err 0.10%  time 2.1min  lr 1.94e-05
+  ep 15 it 50/148 loss 0.000 476 img/s lr 9.14e-06
+  ep 15 it 100/148 loss 0.000 478 img/s lr 3.00e-06
+ep 15/15  test_acc 99.90%  err 0.10%  time 2.0min  lr 1.00e-06
+
+=== run: ep=15 batch=384 ===
+  ep 1 it 50/148 loss 0.571 696 img/s lr 9.80e-05
+  ep 1 it 100/148 loss 0.443 828 img/s lr 1.98e-04
+ep 1/15  test_acc 84.63%  err 15.37%  time 1.3min  lr 2.94e-04
+  -> new best acc 84.63%
+  ep 2 it 50/148 loss 0.111 998 img/s lr 3.94e-04
+  ep 2 it 100/148 loss 0.064 1009 img/s lr 4.94e-04
+ep 2/15  test_acc 97.70%  err 2.30%  time 1.0min  lr 5.90e-04
+  -> new best acc 97.70%
+  ep 3 it 50/148 loss 0.031 1005 img/s lr 6.90e-04
+  ep 3 it 100/148 loss 0.042 1012 img/s lr 7.90e-04
+ep 3/15  test_acc 99.20%  err 0.80%  time 1.0min  lr 8.86e-04
+  -> new best acc 99.20%
+  ep 4 it 50/148 loss 0.018 1005 img/s lr 9.86e-04
+  ep 4 it 100/148 loss 0.015 1012 img/s lr 9.98e-04
+ep 4/15  test_acc 98.13%  err 1.87%  time 1.0min  lr 9.93e-04
+  ep 5 it 50/148 loss 0.005 1006 img/s lr 9.84e-04
+  ep 5 it 100/148 loss 0.003 1012 img/s lr 9.70e-04
+ep 5/15  test_acc 99.60%  err 0.40%  time 1.0min  lr 9.53e-04
+  -> new best acc 99.60%
+  ep 6 it 50/148 loss 0.011 1001 img/s lr 9.32e-04
+  ep 6 it 100/148 loss 0.005 1010 img/s lr 9.07e-04
+ep 6/15  test_acc 99.30%  err 0.70%  time 1.0min  lr 8.80e-04
+  ep 7 it 50/148 loss 0.009 1004 img/s lr 8.49e-04
+  ep 7 it 100/148 loss 0.005 1011 img/s lr 8.15e-04
+ep 7/15  test_acc 99.73%  err 0.27%  time 1.0min  lr 7.80e-04
+  -> new best acc 99.73%
+  ep 8 it 50/148 loss 0.002 1004 img/s lr 7.41e-04
+  ep 8 it 100/148 loss 0.000 1011 img/s lr 7.00e-04
+ep 8/15  test_acc 99.90%  err 0.10%  time 1.0min  lr 6.59e-04
+  -> new best acc 99.90%
+  ep 9 it 50/148 loss 0.000 1006 img/s lr 6.15e-04
+  ep 9 it 100/148 loss 0.000 1012 img/s lr 5.71e-04
+ep 9/15  test_acc 98.30%  err 1.70%  time 1.0min  lr 5.27e-04
+  ep 10 it 50/148 loss 0.000 1005 img/s lr 4.81e-04
+  ep 10 it 100/148 loss 0.001 1012 img/s lr 4.36e-04
+ep 10/15  test_acc 99.93%  err 0.07%  time 1.0min  lr 3.93e-04
+  -> new best acc 99.93%
+  ep 11 it 50/148 loss 0.000 1007 img/s lr 3.49e-04
+  ep 11 it 100/148 loss 0.001 1012 img/s lr 3.06e-04
+ep 11/15  test_acc 99.97%  err 0.03%  time 1.0min  lr 2.66e-04
+  -> new best acc 99.97%
+  ep 12 it 50/148 loss 0.002 1009 img/s lr 2.27e-04
+  ep 12 it 100/148 loss 0.000 1014 img/s lr 1.90e-04
+ep 12/15  test_acc 99.97%  err 0.03%  time 1.0min  lr 1.57e-04
+  ep 13 it 50/148 loss 0.000 1007 img/s lr 1.25e-04
+  ep 13 it 100/148 loss 0.000 1013 img/s lr 9.69e-05
+ep 13/15  test_acc 99.93%  err 0.07%  time 1.0min  lr 7.27e-05
+  ep 14 it 50/148 loss 0.000 1008 img/s lr 5.10e-05
+  ep 14 it 100/148 loss 0.000 1013 img/s lr 3.30e-05
+ep 14/15  test_acc 99.93%  err 0.07%  time 1.0min  lr 1.94e-05
+  ep 15 it 50/148 loss 0.000 1008 img/s lr 9.14e-06
+  ep 15 it 100/148 loss 0.000 1013 img/s lr 3.00e-06
+ep 15/15  test_acc 99.97%  err 0.03%  time 1.0min  lr 1.00e-06
+
+=== run: ep=15 batch=384 ===
+  ep 1 it 50/148 loss 0.092 697 img/s lr 9.80e-05
+  ep 1 it 100/148 loss 0.022 828 img/s lr 1.98e-04
+ep 1/15  test_acc 99.87%  err 0.13%  time 1.3min  lr 2.94e-04
+  -> new best acc 99.87%
+  ep 2 it 50/148 loss 0.005 1005 img/s lr 3.94e-04
+  ep 2 it 100/148 loss 0.002 1013 img/s lr 4.94e-04
+ep 2/15  test_acc 99.93%  err 0.07%  time 1.0min  lr 5.90e-04
+  -> new best acc 99.93%
+  ep 3 it 50/148 loss 0.001 1009 img/s lr 6.90e-04
+  ep 3 it 100/148 loss 0.001 1014 img/s lr 7.90e-04
+ep 3/15  test_acc 99.93%  err 0.07%  time 1.0min  lr 8.86e-04
+  ep 4 it 50/148 loss 0.000 1009 img/s lr 9.86e-04
+  ep 4 it 100/148 loss 0.001 1014 img/s lr 9.98e-04
+ep 4/15  test_acc 99.97%  err 0.03%  time 1.0min  lr 9.93e-04
+  -> new best acc 99.97%
+  ep 5 it 50/148 loss 0.000 1006 img/s lr 9.84e-04
+  ep 5 it 100/148 loss 0.001 1013 img/s lr 9.70e-04
+ep 5/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 9.53e-04
+  -> new best acc 100.00%
+  ep 6 it 50/148 loss 0.000 1007 img/s lr 9.32e-04
+  ep 6 it 100/148 loss 0.000 1013 img/s lr 9.07e-04
+ep 6/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 8.80e-04
+  ep 7 it 50/148 loss 0.000 1006 img/s lr 8.49e-04
+  ep 7 it 100/148 loss 0.000 1013 img/s lr 8.15e-04
+ep 7/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 7.80e-04
+  ep 8 it 50/148 loss 0.000 1008 img/s lr 7.41e-04
+  ep 8 it 100/148 loss 0.000 1014 img/s lr 7.00e-04
+ep 8/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 6.59e-04
+  ep 9 it 50/148 loss 0.000 1009 img/s lr 6.15e-04
+  ep 9 it 100/148 loss 0.000 1014 img/s lr 5.71e-04
+ep 9/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 5.27e-04
+  ep 10 it 50/148 loss 0.000 1008 img/s lr 4.81e-04
+  ep 10 it 100/148 loss 0.000 1014 img/s lr 4.36e-04
+ep 10/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 3.93e-04
+  ep 11 it 50/148 loss 0.000 1006 img/s lr 3.49e-04
+  ep 11 it 100/148 loss 0.000 1012 img/s lr 3.06e-04
+ep 11/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 2.66e-04
+  ep 12 it 50/148 loss 0.000 1009 img/s lr 2.27e-04
+  ep 12 it 100/148 loss 0.000 1014 img/s lr 1.90e-04
+ep 12/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 1.57e-04
+  ep 13 it 50/148 loss 0.000 1009 img/s lr 1.25e-04
+  ep 13 it 100/148 loss 0.000 1014 img/s lr 9.69e-05
+ep 13/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 7.27e-05
+  ep 14 it 50/148 loss 0.000 1007 img/s lr 5.10e-05
+  ep 14 it 100/148 loss 0.000 1013 img/s lr 3.30e-05
+ep 14/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 1.94e-05
+  ep 15 it 50/148 loss 0.000 1008 img/s lr 9.14e-06
+  ep 15 it 100/148 loss 0.000 1013 img/s lr 3.00e-06
+ep 15/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 1.00e-06
+
+=== run: ep=15 batch=384 ===
+  ep 1 it 50/148 loss 0.122 685 img/s lr 9.80e-05
+  ep 1 it 100/148 loss 0.034 815 img/s lr 1.98e-04
+ep 1/15  test_acc 99.83%  err 0.17%  time 1.3min  lr 2.94e-04
+  -> new best acc 99.83%
+  ep 2 it 50/148 loss 0.002 993 img/s lr 3.94e-04
+  ep 2 it 100/148 loss 0.002 963 img/s lr 4.94e-04
+ep 2/15  test_acc 100.00%  err 0.00%  time 1.0min  lr 5.90e-04
+  -> new best acc 100.00%

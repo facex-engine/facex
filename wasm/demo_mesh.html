@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaceX — 98-point face mesh (ONNX)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background:#0a0a0a; color:#e0e0e0; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { color:#fff; font-size: 22px; margin-bottom: 4px; }
+  h1 span { color:#10b981; }
+  p.sub { color:#666; font-size: 13px; margin-bottom: 16px; }
+  .status { padding: 8px 12px; font-size: 13px; border-radius: 6px; margin-bottom: 12px; }
+  .status.loading { background:#1c1408; color:#f59e0b; }
+  .status.ready   { background:#052e16; color:#10b981; }
+  .status.error   { background:#1c0a0a; color:#ef4444; }
+
+  .stage {
+    position: relative; width: 100%; max-width: 640px; margin: 0 auto;
+    aspect-ratio: 4/3; background:#111; border: 2px solid #222;
+    border-radius: 14px; overflow: hidden;
+  }
+  video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  canvas.overlay { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+
+  #hud { position:absolute; top: 8px; left: 8px; display:flex; gap:6px; flex-wrap:wrap; pointer-events:none; }
+  .hud-tag {
+    background: rgba(0,0,0,0.7); color:#10b981;
+    padding: 4px 10px; border-radius: 12px;
+    font-family: monospace; font-size: 12px;
+  }
+
+  .controls { display: flex; gap: 8px; justify-content:center; flex-wrap: wrap; margin: 12px 0; }
+  .btn { padding: 10px 18px; border: none; border-radius: 8px;
+         font-size: 13px; font-weight: 600; cursor: pointer;
+         background:#1a1a1a; color:#aaa; border: 1px solid #2a2a2a; }
+  .btn.primary { background:#10b981; color:#fff; border-color:#059669; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .picker { display: flex; gap: 8px; justify-content:center; flex-wrap: wrap; margin: 8px 0 12px; }
+  .pick { padding: 6px 12px; background:#111; border-radius: 8px;
+          border: 1px solid #222; cursor: pointer; font-size: 13px; }
+  .pick.active { border-color:#10b981; background:#052e16; }
+
+  .info { margin-top: 16px; padding: 14px; background:#0d0d0d; border:1px solid #1a1a1a;
+          border-radius: 10px; font-size: 12px; color:#777; line-height: 1.6; }
+  .info code { background:#1a1a1a; padding:1px 6px; border-radius:3px; color:#10b981; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>Face<span>X</span> — 98-point mesh</h1>
+  <p class="sub">YuNet ONNX (detection) → custom WFLW landmark ONNX (98 points) → wireframe. Pure onnxruntime-web, no SIMD required.</p>
+
+  <div id="status" class="status loading">Loading…</div>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay" class="overlay"></canvas>
+    <div id="hud"></div>
+  </div>
+
+  <div class="picker" id="picker">
+    <div class="pick active" data-mode="hybrid">hybrid</div>
+    <div class="pick" data-mode="true3d">true 3D</div>
+    <div class="pick" data-mode="dense">tps</div>
+    <div class="pick" data-mode="scan">scan</div>
+    <div class="pick" data-mode="holo">holo</div>
+    <div class="pick" data-mode="detect">detect only</div>
+    <div class="pick" data-mode="faceid">face ID</div>
+    <div class="pick" data-mode="off">off</div>
+  </div>
+
+  <div class="controls">
+    <button id="btnStart" class="btn primary" disabled>Start camera</button>
+    <button id="btnLock"  class="btn" disabled>Lock to me</button>
+    <button id="btnUnlock" class="btn" disabled style="display:none">Unlock</button>
+    <button id="btnStop"  class="btn" disabled>Stop</button>
+  </div>
+
+  <div class="info">
+    <p><strong>Pipeline.</strong> Every frame: YuNet ONNX finds a face → crop+resize to 112×112 → 1.15M-param landmark ConvNet predicts 98 (x,y) points → wireframe drawn on overlay canvas.</p>
+    <p><strong>All custom.</strong> Both models trained from scratch (face detector by FaceX, landmarks by us on WFLW). Apache 2.0.</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const video = $('video');
+const overlay = $('overlay');
+const ctx = overlay.getContext('2d');
+const hud = $('hud');
+const statusEl = $('status');
+const btnStart = $('btnStart');
+const btnLock  = $('btnLock');
+const btnUnlock = $('btnUnlock');
+const btnStop = $('btnStop');
+
+let detSess = null, lmSess = null, recSess = null, lm3dSess = null, spoof27Sess = null, spoof40Sess = null, meshTopology = null, stream = null, running = false;
+let mode = 'hybrid';
+let last3D = [];     // per-face 478 [x,y,z] from true-3D model (overlay coords)
+let lastHybrid = []; // per-face 478 [x,y,z] from hybrid (WFLW->MP via TPS)
+let hybridTemplate = null;  // { T: Float32Array(478*98), z_norm: Float32Array(478) }
+let denseLevel = 'full';
+let denseTemplate = null;     // { T: Float32Array(M*98), levels: {low,mid,full}, M, N }
+let frameCount = 0, lastFpsT = performance.now(), fps = 0;
+let detectMs = 0, lmMs = 0, recMs = 0;
+let refEmb = null;       // 256-dim reference (when locked)
+let lastSim = null;      // most recent cosine similarity to ref
+let lastPts2d = null, lastBox = null, lastFaceCount = 0;
+let lastLive = null, lastSpoof = null;  // P(live), P(spoof) from antispoof model
+let spoofMs = 0;
+// EMA smoothing for spoof probability — antispoof can flicker on partial occlusion
+let emaLive = null;
+const SPOOF_EMA = 0.65;            // higher → smoother
+const SPOOF_THRESH = 0.5;         // P(live) > 0.5 → LIVE
+
+function setStatus(t, k) { statusEl.textContent = t; statusEl.className = 'status ' + (k || 'loading'); }
+function setHUD(parts) { hud.innerHTML = parts.map(p => `<span class="hud-tag">${p}</span>`).join(''); }
+
+// ---- WFLW 98-point edges (anatomical contours only) ----
+const EDGES = (() => {
+  const e = [];
+  for (let i = 0; i < 32; i++) e.push([i, i + 1]);
+  for (let i = 33; i < 41; i++) e.push([i, i + 1]); e.push([41, 33]);
+  for (let i = 42; i < 50; i++) e.push([i, i + 1]); e.push([50, 42]);
+  for (let i = 51; i < 54; i++) e.push([i, i + 1]);
+  for (let i = 55; i < 59; i++) e.push([i, i + 1]);
+  e.push([54, 57]);
+  for (let i = 60; i < 67; i++) e.push([i, i + 1]); e.push([67, 60]);
+  for (let i = 68; i < 75; i++) e.push([i, i + 1]); e.push([75, 68]);
+  for (let i = 76; i < 87; i++) e.push([i, i + 1]); e.push([87, 76]);
+  for (let i = 88; i < 95; i++) e.push([i, i + 1]); e.push([95, 88]);
+  return e;
+})();
+
+// ---- HARDCODED full face mesh edges ----
+// Every line is a fixed (i, j) pair connecting anatomical landmarks. No
+// Delaunay, no autotriangulation — what's drawn is exactly what's listed.
+// Triangles emerge from the chosen connectivity. Pattern is designed to
+// match MediaPipe-FaceMesh-style tesselation adapted for WFLW's 98-pt layout.
+const MESH_EDGES = (() => {
+  const e = [...EDGES];   // start with anatomical contours (eyes/mouth/brows/face contour/nose)
+
+  // Forehead: left half (contour 0..3 → left brow 33..36)
+  e.push([0,33], [1,33], [1,34], [2,34], [2,35], [3,35], [3,36], [4,36], [4,37]);
+  // Forehead: right half (contour 29..32 → right brow 47..50)
+  e.push([32,50], [31,50], [31,49], [30,49], [30,48], [29,48], [29,47], [28,47], [28,46]);
+  // Across forehead: between brow inner ends + nose bridge top
+  e.push([41,51], [42,51], [41,42]);
+  // Outer brow tails to temple
+  e.push([33,1], [50,31]);
+
+  // Brow to eye (left)
+  e.push([37,33], [37,34], [38,34], [38,35], [39,35], [39,36], [40,36], [40,37]);
+  e.push([33,60], [34,60], [35,61], [36,62], [37,63], [38,64]);
+  // Brow to eye (right)
+  e.push([46,42], [46,43], [45,43], [45,44], [44,44], [43,45], [42,46], [50,68]);
+  e.push([42,68], [43,68], [44,69], [45,70], [46,71], [47,72]);
+
+  // Eye-to-nose (inner corners)
+  e.push([64,51], [68,51], [64,52], [68,52], [64,68]);
+
+  // Left cheek: contour 4..7 to eye-left-bottom and to nose
+  e.push([4,60], [5,60], [5,67], [6,67], [6,66], [7,66], [7,55]);
+  e.push([60,67], [67,55], [55,56]);
+  // Right cheek: contour 28..25 mirror
+  e.push([28,72], [27,72], [27,75], [26,75], [26,74], [25,74], [25,59]);
+  e.push([72,75], [75,59], [59,58]);
+
+  // Cheek to mouth (left side)
+  e.push([55,76], [76,55], [7,76], [8,76], [8,77], [9,77], [9,78]);
+  // Cheek to mouth (right side)
+  e.push([59,82], [82,59], [25,82], [24,82], [24,81], [23,81], [23,80]);
+
+  // Nose tip area
+  e.push([57,76], [57,82], [57,55], [57,59], [56,76], [58,82]);
+  e.push([54,55], [54,59], [54,57]);
+
+  // Lower lip to chin (contour 10..22 → mouth)
+  e.push([10,78], [10,79], [11,79], [11,86], [12,86], [12,85], [13,85], [13,84]);
+  e.push([14,84], [14,83], [15,83], [16,83], [17,83], [17,84], [18,84], [18,85], [19,85]);
+  e.push([20,85], [20,86], [21,86], [21,79], [22,79], [22,78], [80,22], [23,80], [23,79]);
+
+  // Inner mouth to outer mouth corners
+  e.push([88,76], [88,77], [88,87], [82,92], [82,91], [82,93]);
+  e.push([89,77], [89,78], [90,78], [90,87], [91,86], [91,85]);
+  e.push([93,79], [94,80], [94,81], [95,82], [95,86]);
+
+  // Pupil edges (4 connections each, to anchor pupil into eye)
+  e.push([96,60], [96,62], [96,64], [96,66]);
+  e.push([97,68], [97,70], [97,72], [97,74]);
+
+  // Deduplicate
+  const seen = new Set();
+  const dedup = [];
+  for (const [a, b] of e) {
+    const k = a < b ? a + ',' + b : b + ',' + a;
+    if (seen.has(k)) continue;
+    seen.add(k); dedup.push([a, b]);
+  }
+  return dedup;
+})();
+
+// ---- offscreen canvases ----
+const DET_HW = 320;   // FaceX detector input size
+const detCv = document.createElement('canvas');
+detCv.width = DET_HW; detCv.height = DET_HW;
+const detCtx = detCv.getContext('2d', { willReadFrequently: true });
+const detInput = new Float32Array(3 * DET_HW * DET_HW);
+
+const lmCv = document.createElement('canvas');
+lmCv.width = 112; lmCv.height = 112;
+const lmCtx = lmCv.getContext('2d', { willReadFrequently: true });
+const lmInput = new Float32Array(3 * 112 * 112);
+
+// ---- Encrypted model loading (AES-256-GCM via WebCrypto) ----
+// Models are shipped as .enc files (12-byte IV prepended to ciphertext+tag).
+// The 32-byte key is split into two arrays that XOR to recover the master
+// key — defined in different scopes to slow casual extraction.
+const _kp = new Uint8Array([
+  0x42, 0x8a, 0x2f, 0x98, 0xd7, 0x28, 0xae, 0x22, 0x71, 0x37, 0x44, 0x91, 0x23, 0xef, 0x65, 0xcd,
+  0xb5, 0xc0, 0xfb, 0xcf, 0xec, 0x4d, 0x3b, 0x2f, 0xe9, 0xb5, 0xdb, 0xa5, 0x81, 0x89, 0xdb, 0xbc,
+]);
+
+async function _decryptOnnx(url, key) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`fetch ${url} ${r.status}`);
+  const buf = new Uint8Array(await r.arrayBuffer());
+  const iv = buf.subarray(0, 12);
+  const data = buf.subarray(12);
+  const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-GCM' }, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, cryptoKey, data);
+  return new Uint8Array(plain);
+}
+
+async function _loadEncryptedSession(url, key) {
+  const onnxBytes = await _decryptOnnx(url, key);
+  const sess = await ort.InferenceSession.create(onnxBytes, { executionProviders: ['wasm'] });
+  // Zero the plaintext buffer right after handoff to onnxruntime to limit
+  // window of exposure in JS memory. The runtime keeps its own copy in WASM heap.
+  onnxBytes.fill(0);
+  return sess;
+}
+
+// ---- ONNX session setup ----
+async function loadModels() {
+  ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+  ort.env.wasm.numThreads = 1;
+  // Second half of the key — XORed against _kp at decrypt time.
+  const _ko = new Uint8Array([
+    0xb7, 0x4d, 0xb2, 0x24, 0xec, 0x76, 0x04, 0xe4, 0xcb, 0x46, 0xc8, 0x02, 0x97, 0x3c, 0x33, 0xfa,
+    0x8b, 0xb0, 0x11, 0x60, 0x0c, 0xd5, 0x02, 0xf3, 0xac, 0xb8, 0x62, 0x0c, 0xf3, 0xad, 0x54, 0x01,
+  ]);
+  const K = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) K[i] = _kp[i] ^ _ko[i];
+
+  const steps = [
+    ['facex_detect.enc',        'det'],
+    ['facex_landmark.enc',      'lm'],
+    ['facex_tiny.enc',          'rec'],
+    ['minifasnet_v2_27.enc',    'spoof27'],
+    ['minifasnet_v1se_40.enc',  'spoof40'],
+    ['facex_3d_landmarks.enc',  'lm3d'],
+  ];
+  const setSess = (name, s) => {
+    if (name === 'det') detSess = s;
+    else if (name === 'lm') lmSess = s;
+    else if (name === 'rec') recSess = s;
+    else if (name === 'spoof27') spoof27Sess = s;
+    else if (name === 'spoof40') spoof40Sess = s;
+    else if (name === 'lm3d') lm3dSess = s;
+  };
+
+  for (let i = 0; i < steps.length; i++) {
+    const [file, name] = steps[i];
+    setStatus(`Decrypting models… ${i + 1}/${steps.length} (${name})`, 'loading');
+    setSess(name, await _loadEncryptedSession(file, K));
+  }
+  // Wipe key bytes from JS heap after all sessions are loaded.
+  K.fill(0);
+  console.log('all 6 encrypted models loaded');
+
+  // Load dense mesh template v3 (TPS transfer matrix + triangles + flow lines + Z depths)
+  const tplResp = await fetch('face_mesh_template_v3.json');
+  const tpl = await tplResp.json();
+  denseTemplate = {
+    M: tpl.n_total,
+    N: 98,
+    T: new Float32Array(tpl.T),
+    triangles: tpl.triangles,
+    flowOpen: tpl.flow_open,
+    flowClosed: tpl.flow_closed,
+    canonical: tpl.canonical,
+    zCanonical: new Float32Array(tpl.z_canonical),
+  };
+  // Load MediaPipe face mesh topology
+  const topoResp = await fetch('facemesh_topology.json');
+  meshTopology = await topoResp.json();
+  // Load WFLW->MP hybrid TPS template
+  const hyResp = await fetch('wflw_to_mp_hybrid.json');
+  const hy = await hyResp.json();
+  hybridTemplate = {
+    T: new Float32Array(hy.T),                    // [478 * 98] row-major
+    zNorm: new Float32Array(hy.z_norm),           // [478] in [0,1]
+  };
+  console.log(`hybrid template: T shape ${hy.T.length / 98} x 98, topology: ${meshTopology.TESSELATION.length} tess edges`);
+}
+
+// Cosine similarity between two normalized vectors
+function cosSim(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+
+// Run nano recognition on the SAME aligned crop we use for landmarks.
+// Returns Float32Array of length 256 (already L2-normalized by the model).
+// 478-point 3D landmark prediction. Returns Array of [x, y, z] of length 478.
+// x, y in pixels of the ORIGINAL video (not normalized), z in roughly [-0.3, 0.3].
+async function predict3D(box) {
+  // MS1M training crops were 5-point aligned: eyes at y≈0.40, mouth at y≈0.72.
+  // YuNet bbox doesn't include forehead, so the bbox vertical center sits
+  // around nose height. We bias the crop UPWARD by ~22% of face height so
+  // forehead is included and the face fits like the training distribution.
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const bw = box.x2 - box.x1, bh = box.y2 - box.y1;
+  const side = Math.max(bw, bh) * 1.5;            // tighter than 1.3, looser than 1.0
+  const cx = (box.x1 + box.x2) / 2;
+  const cy = (box.y1 + box.y2) / 2 - bh * 0.18;   // bias upward to include forehead
+  const sx = cx - side / 2, sy = cy - side / 2;
+  lmCtx.fillStyle = '#000'; lmCtx.fillRect(0, 0, 112, 112);
+  lmCtx.drawImage(video, sx, sy, side, side, 0, 0, 112, 112);
+  const img = lmCtx.getImageData(0, 0, 112, 112).data;
+  const N = 112 * 112;
+  for (let i = 0, p = 0; i < N; i++) {
+    const r = img[p++], g = img[p++], b = img[p++]; p++;
+    lmInput[i]         = (r - 127.5) / 128;
+    lmInput[N + i]     = (g - 127.5) / 128;
+    lmInput[2 * N + i] = (b - 127.5) / 128;
+  }
+  const t = new ort.Tensor('float32', lmInput, [1, 3, 112, 112]);
+  const o = await lm3dSess.run({ input: t });
+  const lm = o['landmarks_3d'].data;
+  const pts = new Array(478);
+  for (let i = 0; i < 478; i++) {
+    // model outputs xy in crop [0,1] and z in [-0.3, 0.3]-ish (forward = more negative)
+    pts[i] = [lm[i*3]     * side + sx,
+              lm[i*3 + 1] * side + sy,
+              lm[i*3 + 2] * side];   // scale z by face size for consistency
+  }
+  return pts;
+}
+
+const recInput = new Float32Array(3 * 112 * 112);
+async function predictEmbedding(box) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const bw = box.x2 - box.x1, bh = box.y2 - box.y1;
+  const side = Math.max(bw, bh) * (1 + 2 * 0.15);
+  const cx = (box.x1 + box.x2) / 2, cy = (box.y1 + box.y2) / 2;
+  const sx = cx - side / 2, sy = cy - side / 2;
+  lmCtx.fillStyle = '#000';
+  lmCtx.fillRect(0, 0, 112, 112);
+  lmCtx.drawImage(video, sx, sy, side, side, 0, 0, 112, 112);
+  const img = lmCtx.getImageData(0, 0, 112, 112).data;
+  const N = 112 * 112;
+  for (let i = 0, p = 0; i < N; i++) {
+    const r = img[p++], g = img[p++], b = img[p++]; p++;
+    recInput[i]         = (r - 127.5) / 128;
+    recInput[N + i]     = (g - 127.5) / 128;
+    recInput[2 * N + i] = (b - 127.5) / 128;
+  }
+  const t = new ort.Tensor('float32', recInput, [1, 3, 112, 112]);
+  const o = await recSess.run({ input: t });
+  return o['embedding'].data;
+}
+
+// MiniFASNet ensemble — 80×80 BGR [0,1] input. Class index 1 = LIVE,
+// 0 and 2 are different spoof types. We crop at two scales (2.7× and 4×
+// the face bbox per MiniFASNet's design) and average their P(live).
+const spoofCv = document.createElement('canvas');
+spoofCv.width = 80; spoofCv.height = 80;
+const spoofCtx = spoofCv.getContext('2d', { willReadFrequently: true });
+const spoofInput27 = new Float32Array(3 * 80 * 80);
+const spoofInput40 = new Float32Array(3 * 80 * 80);
+
+function fillSpoofTensor(box, scale, dst) {
+  // Mirror MiniFASNet's generate_patches.CropImage:
+  //   new_w = bbox_w * scale, new_h = bbox_h * scale  (NON-square)
+  //   center on bbox center, clamp to image, then resize to 80×80
+  // The model was trained on aspect-squashed faces, so we MUST keep this.
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const bw = box.x2 - box.x1, bh = box.y2 - box.y1;
+  let s = Math.min((vh - 1) / bh, Math.min((vw - 1) / bw, scale));
+  let nw = bw * s, nh = bh * s;
+  let cx = (box.x1 + box.x2) / 2, cy = (box.y1 + box.y2) / 2;
+  let ltx = cx - nw / 2, lty = cy - nh / 2;
+  let rbx = cx + nw / 2, rby = cy + nh / 2;
+  if (ltx < 0) { rbx -= ltx; ltx = 0; }
+  if (lty < 0) { rby -= lty; lty = 0; }
+  if (rbx > vw - 1) { ltx -= rbx - vw + 1; rbx = vw - 1; }
+  if (rby > vh - 1) { lty -= rby - vh + 1; rby = vh - 1; }
+  const sw = rbx - ltx, sh = rby - lty;
+  spoofCtx.fillStyle = '#000';
+  spoofCtx.fillRect(0, 0, 80, 80);
+  spoofCtx.drawImage(video, ltx, lty, sw, sh, 0, 0, 80, 80);
+  const img = spoofCtx.getImageData(0, 0, 80, 80).data;
+  const N = 80 * 80;
+  // MiniFASNet uses Silent-Face's custom ToTensor that has .div(255)
+  // commented out, so the model expects RAW pixel values in [0, 255].
+  // Channel order is BGR (model trained on cv2.imread output).
+  for (let i = 0, p = 0; i < N; i++) {
+    const r = img[p++], g = img[p++], b = img[p++]; p++;
+    dst[i]         = b;   // B channel (raw [0,255])
+    dst[N + i]     = g;   // G channel
+    dst[2 * N + i] = r;   // R channel
+  }
+}
+
+async function predictSpoof(box) {
+  fillSpoofTensor(box, 2.7, spoofInput27);
+  fillSpoofTensor(box, 4.0, spoofInput40);
+  const t27 = new ort.Tensor('float32', spoofInput27, [1, 3, 80, 80]);
+  const t40 = new ort.Tensor('float32', spoofInput40, [1, 3, 80, 80]);
+  // Run both in parallel (onnxruntime serializes internally but JS doesn't block).
+  const [o27, o40] = await Promise.all([
+    spoof27Sess.run({ input: t27 }),
+    spoof40Sess.run({ input: t40 }),
+  ]);
+  const p27 = o27['prob'].data;
+  const p40 = o40['prob'].data;
+  // Average the two models' P(live) — class index 1 is "live" per repo.
+  const live = (p27[1] + p40[1]) / 2;
+  return { spoof: 1 - live, live };
+}
+
+// ---- FaceX face detector (custom, 320×320, FCOS-style anchor-free) ----
+// Replaces YuNet. Trained from scratch on WIDER FACE.
+function fillDetInput(srcVideo, W, H) {
+  // Letterbox from top-left (matches Python preprocess).
+  if (detCv.width !== W || detCv.height !== H) {
+    detCv.width = W; detCv.height = H;
+  }
+  detCtx.fillStyle = '#000';
+  detCtx.fillRect(0, 0, W, H);
+  const vw = srcVideo.videoWidth, vh = srcVideo.videoHeight;
+  const scale = Math.min(W / vw, H / vh);
+  const dw = vw * scale, dh = vh * scale;
+  // top-left letterbox (mirror python preprocess.canvas.paste at (0,0))
+  detCtx.drawImage(srcVideo, 0, 0, dw, dh);
+  const img = detCtx.getImageData(0, 0, W, H).data;
+  // RGB, normalize (x - 127.5) / 128 → [-1, 1], CHW
+  const N = W * H;
+  for (let i = 0, p = 0; i < N; i++) {
+    const r = img[p++], g = img[p++], b = img[p++]; p++;
+    detInput[i]         = (r - 127.5) / 128.0;
+    detInput[N + i]     = (g - 127.5) / 128.0;
+    detInput[2 * N + i] = (b - 127.5) / 128.0;
+  }
+  return { scale, dx: 0, dy: 0 };
+}
+
+// Decode FaceX detector: 3 scales (strides 8, 16, 32), each with
+// cls [1, 1, H, W], box [1, 4, H, W] (l, t, r, b in stride units), kps [1, 10, H, W].
+// We use only bbox + score (kps not trained — RetinaFace landmark labels were unavailable).
+let _debugDecode = true;
+function decodeFacex(out, W, H, scoreThr=0.42, nmsThr=0.4) {
+  const strides = [8, 16, 32];
+  const dets = [];
+  for (let li = 0; li < strides.length; li++) {
+    const s = strides[li];
+    const cls = out['cls_p' + (li + 3)].data;    // [Hs * Ws]
+    const box = out['box_p' + (li + 3)].data;    // [4 * Hs * Ws] (CHW)
+    const Hs = H / s, Ws = W / s;
+    const N = Hs * Ws;
+    let maxScore = 0;
+    for (let i = 0; i < N; i++) {
+      const z = cls[i];
+      const score = 1.0 / (1.0 + Math.exp(-z));   // sigmoid
+      if (score > maxScore) maxScore = score;
+      if (score < scoreThr) continue;
+      const y = Math.floor(i / Ws), x = i % Ws;
+      const cx = (x + 0.5) * s, cy = (y + 0.5) * s;
+      // box is CHW: channel c at offset c * N + i
+      const l = Math.max(0, box[0 * N + i]) * s;
+      const t = Math.max(0, box[1 * N + i]) * s;
+      const r = Math.max(0, box[2 * N + i]) * s;
+      const b = Math.max(0, box[3 * N + i]) * s;
+      const x1 = cx - l, y1 = cy - t;
+      const x2 = cx + r, y2 = cy + b;
+      if (x2 <= x1 || y2 <= y1) continue;
+      // Filter out ear/elongated false positives — face aspect ratio is roughly square.
+      const bw = x2 - x1, bh = y2 - y1;
+      const ar = bw / bh;
+      if (ar < 0.5 || ar > 1.75) continue;
+      dets.push({ x1, y1, x2, y2, score });
+    }
+    if (_debugDecode) console.log(`P${li+3} (stride ${s}): max=${maxScore.toFixed(3)} kept=${dets.length}`);
+  }
+  _debugDecode = false;
+  // NMS
+  dets.sort((a, b) => b.score - a.score);
+  const kept = [];
+  while (dets.length) {
+    const d = dets.shift();
+    kept.push(d);
+    for (let i = dets.length - 1; i >= 0; i--) {
+      const e = dets[i];
+      const ix1 = Math.max(d.x1, e.x1), iy1 = Math.max(d.y1, e.y1);
+      const ix2 = Math.min(d.x2, e.x2), iy2 = Math.min(d.y2, e.y2);
+      const iw = Math.max(0, ix2 - ix1), ih = Math.max(0, iy2 - iy1);
+      const inter = iw * ih;
+      const u = (d.x2 - d.x1) * (d.y2 - d.y1) + (e.x2 - e.x1) * (e.y2 - e.y1) - inter;
+      if (inter / u > nmsThr) dets.splice(i, 1);
+    }
+  }
+  return kept;
+}
+
+async function detect(srcVideo) {
+  const W = DET_HW, H = DET_HW;
+  const meta = fillDetInput(srcVideo, W, H);
+  const inp = new ort.Tensor('float32', detInput, [1, 3, H, W]);
+  const out = await detSess.run({ input: inp });
+  const dets = decodeFacex(out, W, H);
+  // un-letterbox back to video coords (dx=dy=0 since we paste at top-left)
+  return dets.map(d => ({
+    x1: d.x1 / meta.scale,
+    y1: d.y1 / meta.scale,
+    x2: d.x2 / meta.scale,
+    y2: d.y2 / meta.scale,
+    score: d.score,
+  }));
+}
+
+async function predictLandmarks(box) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const bw = box.x2 - box.x1, bh = box.y2 - box.y1;
+  const side = Math.max(bw, bh) * (1 + 2 * 0.15);
+  const cx = (box.x1 + box.x2) / 2, cy = (box.y1 + box.y2) / 2;
+  const sx = cx - side / 2, sy = cy - side / 2;
+
+  lmCtx.fillStyle = '#000';
+  lmCtx.fillRect(0, 0, 112, 112);
+  lmCtx.drawImage(video, sx, sy, side, side, 0, 0, 112, 112);
+  const img = lmCtx.getImageData(0, 0, 112, 112).data;
+  const N = 112 * 112;
+  for (let i = 0, p = 0; i < N; i++) {
+    const r = img[p++], g = img[p++], b = img[p++]; p++;
+    lmInput[i]         = (r - 127.5) / 128;
+    lmInput[N + i]     = (g - 127.5) / 128;
+    lmInput[2 * N + i] = (b - 127.5) / 128;
+  }
+  const t = new ort.Tensor('float32', lmInput, [1, 3, 112, 112]);
+  const o = await lmSess.run({ input: t });
+  const lm = o['landmarks'].data;
+  const pts = new Array(98);
+  for (let i = 0; i < 98; i++) {
+    pts[i] = [lm[i*2] * side + sx, lm[i*2+1] * side + sy];
+  }
+  return pts;
+}
+
+function videoToOverlay(pts) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const ow = overlay.clientWidth, oh = overlay.clientHeight;
+  const sx = ow / vw, sy = oh / vh;
+  // mirror X so it matches the scaleX(-1) video display
+  return pts.map(([x, y]) => [ow - x * sx, y * sy]);
+}
+
+// --- Delaunay triangulation (Bowyer-Watson, ~120 lines) ---
+function circumcircle(ax, ay, bx, by, cx, cy) {
+  const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+  if (d === 0) return null;
+  const ux = ((ax*ax + ay*ay) * (by - cy) + (bx*bx + by*by) * (cy - ay) + (cx*cx + cy*cy) * (ay - by)) / d;
+  const uy = ((ax*ax + ay*ay) * (cx - bx) + (bx*bx + by*by) * (ax - cx) + (cx*cx + cy*cy) * (bx - ax)) / d;
+  const dx = ax - ux, dy = ay - uy;
+  return { x: ux, y: uy, r2: dx*dx + dy*dy };
+}
+
+function delaunay(points) {
+  // Super-triangle covering all points
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of points) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const dx = maxX - minX, dy = maxY - minY;
+  const dmax = Math.max(dx, dy) * 10;
+  const midx = (minX + maxX) / 2, midy = (minY + maxY) / 2;
+  const sp = [
+    [midx - 2 * dmax, midy - dmax],
+    [midx,            midy + 2 * dmax],
+    [midx + 2 * dmax, midy - dmax],
+  ];
+  const all = points.concat(sp);
+  let tris = [[points.length, points.length+1, points.length+2]];
+
+  for (let i = 0; i < points.length; i++) {
+    const [px, py] = points[i];
+    const bad = [];
+    const goodTris = [];
+    for (const t of tris) {
+      const cc = circumcircle(all[t[0]][0], all[t[0]][1],
+                              all[t[1]][0], all[t[1]][1],
+                              all[t[2]][0], all[t[2]][1]);
+      if (cc && (px - cc.x)*(px - cc.x) + (py - cc.y)*(py - cc.y) < cc.r2) bad.push(t);
+      else goodTris.push(t);
+    }
+    // boundary of the hole = edges that appear once in bad triangles
+    const edgeCount = new Map();
+    const key = (a, b) => a < b ? a + ',' + b : b + ',' + a;
+    for (const t of bad) {
+      for (const e of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) {
+        const k = key(e[0], e[1]);
+        edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+      }
+    }
+    tris = goodTris;
+    for (const t of bad) {
+      for (const e of [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]]) {
+        const k = key(e[0], e[1]);
+        if (edgeCount.get(k) === 1) tris.push([e[0], e[1], i]);
+      }
+    }
+  }
+  // strip super-triangle
+  const ns = points.length;
+  return tris.filter(t => t[0] < ns && t[1] < ns && t[2] < ns);
+}
+
+let cachedTris = null;
+let cachedTrisFingerprint = -1;
+
+// --- Anatomical "forbidden crossing" edges (don't let Delaunay tris cut
+// through eyes/mouth/nostrils — that's what creates the "random web" look). ---
+const FORBID_EDGES = (() => {
+  const e = [];
+  // left eye loop 60..67
+  for (let i = 60; i < 67; i++) e.push([i, i + 1]); e.push([67, 60]);
+  // right eye loop 68..75
+  for (let i = 68; i < 75; i++) e.push([i, i + 1]); e.push([75, 68]);
+  // outer mouth 76..87
+  for (let i = 76; i < 87; i++) e.push([i, i + 1]); e.push([87, 76]);
+  // inner mouth 88..95
+  for (let i = 88; i < 95; i++) e.push([i, i + 1]); e.push([95, 88]);
+  return e;
+})();
+
+// Smooth curve (Catmull-Rom -> cubic Bezier) through a sequence of pts.
+// `closed=true` to wrap into a loop. Caller must beginPath/stroke around it.
+function smoothPath(ctx, pts, closed=false) {
+  if (pts.length < 2) return;
+  const n = pts.length;
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  const last = closed ? n : n - 1;
+  for (let i = 0; i < last; i++) {
+    const p0 = pts[closed ? (i - 1 + n) % n : Math.max(i - 1, 0)];
+    const p1 = pts[i];
+    const p2 = pts[closed ? (i + 1) % n : Math.min(i + 1, n - 1)];
+    const p3 = pts[closed ? (i + 2) % n : Math.min(i + 2, n - 1)];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2[0], p2[1]);
+  }
+}
+
+// Pull a list of WFLW point INDICES from pts2d as an actual [x,y] array.
+function take(pts2d, indices) { return indices.map(i => pts2d[i]); }
+// Index ranges of anatomical loops/polylines, used for smooth-curve passes.
+const FEATURE_PATHS = [
+  { idx: Array.from({length: 33}, (_, i) => i),          closed: false },  // face contour
+  { idx: Array.from({length: 9},  (_, i) => 33 + i),     closed: true  },  // left brow loop
+  { idx: Array.from({length: 9},  (_, i) => 42 + i),     closed: true  },  // right brow loop
+  { idx: [51, 52, 53, 54],                                closed: false },  // nose bridge
+  { idx: [55, 56, 57, 58, 59],                            closed: false },  // nose bottom
+  { idx: Array.from({length: 8},  (_, i) => 60 + i),     closed: true  },  // left eye
+  { idx: Array.from({length: 8},  (_, i) => 68 + i),     closed: true  },  // right eye
+  { idx: Array.from({length: 12}, (_, i) => 76 + i),     closed: true  },  // outer mouth
+  { idx: Array.from({length: 8},  (_, i) => 88 + i),     closed: true  },  // inner mouth
+];
+
+function _ccw(a, b, c) {
+  return (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0]);
+}
+// segments p1-p2 and p3-p4 properly intersect (not just touch at endpoints)
+function segIntersect(p1, p2, p3, p4) {
+  const d1 = _ccw(p3, p4, p1);
+  const d2 = _ccw(p3, p4, p2);
+  const d3 = _ccw(p1, p2, p3);
+  const d4 = _ccw(p1, p2, p4);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+// Does triangle (i, j, k) have any edge crossing any forbidden edge?
+// An edge that *shares an endpoint* with a forbidden edge doesn't count
+// as crossing (they meet at the corner, not cross through).
+function trianglesCrossesForbidden(i, j, k, pts) {
+  const triEdges = [[i, j], [j, k], [k, i]];
+  for (const [a, b] of triEdges) {
+    for (const [c, d] of FORBID_EDGES) {
+      if (a === c || a === d || b === c || b === d) continue;
+      if (segIntersect(pts[a], pts[b], pts[c], pts[d])) return true;
+    }
+  }
+  return false;
+}
+
+// Region maps (WFLW 98-point indices)
+const REGION = (() => {
+  const r = new Array(98).fill('contour');
+  for (let i = 0; i <= 32; i++) r[i] = 'contour';
+  for (let i = 33; i <= 50; i++) r[i] = 'brow';
+  for (let i = 51; i <= 59; i++) r[i] = 'nose';
+  for (let i = 60; i <= 67; i++) r[i] = 'eyeL';
+  for (let i = 68; i <= 75; i++) r[i] = 'eyeR';
+  for (let i = 76; i <= 95; i++) r[i] = 'mouth';
+  r[96] = 'pupilL'; r[97] = 'pupilR';
+  return r;
+})();
+// Region edge sets for fast lookup (used by holo coloring)
+function edgeKey(a, b) { return a < b ? a + ',' + b : b + ',' + a; }
+
+function drawHolo(pts2d, bbox2d) {
+  // Re-use the same sanity + triangulation pipeline as the mesh mode.
+  let pminx = Infinity, pminy = Infinity, pmaxx = -Infinity, pmaxy = -Infinity;
+  for (const [x, y] of pts2d) {
+    if (x < pminx) pminx = x; if (x > pmaxx) pmaxx = x;
+    if (y < pminy) pminy = y; if (y > pmaxy) pmaxy = y;
+  }
+  const pw = pmaxx - pminx, ph = pmaxy - pminy;
+  if (pw < 20 || ph < 20) return;
+  const aspect = pw / ph;
+  if (aspect < 0.4 || aspect > 2.5) return;
+  if (pw > overlay.width * 0.95 || ph > overlay.height * 0.95) return;
+
+  // pulse 0..1 over ~2 seconds
+  const t = (performance.now() / 1000) % 2;
+  const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI);
+  const maxEdge = Math.hypot(pw, ph) * 0.35;
+  const goodTris = filterTriangles(delaunay(pts2d), pts2d, maxEdge);
+
+  ctx.save();
+
+  // (1) translucent green fill — face "shield"
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.06)';
+  for (const tr of goodTris) {
+    const a = pts2d[tr[0]], b = pts2d[tr[1]], c = pts2d[tr[2]];
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // (2) wireframe edges, soft cyan-green, very thin
+  ctx.lineWidth = 0.35;
+  ctx.strokeStyle = `rgba(80, 230, 200, ${0.30 + 0.15 * pulse})`;
+  ctx.beginPath();
+  for (const tr of goodTris) {
+    const a = pts2d[tr[0]], b = pts2d[tr[1]], c = pts2d[tr[2]];
+    ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+    ctx.lineTo(c[0], c[1]); ctx.lineTo(a[0], a[1]);
+  }
+  ctx.stroke();
+
+  // (3) region-colored anatomical lines (bright, slightly glowing)
+  const colorByRegion = {
+    contour: `rgba(16, 230, 130, ${0.85})`,
+    brow:    `rgba(120, 220, 255, 0.95)`,
+    nose:    `rgba(120, 200, 255, 0.85)`,
+    eyeL:    `rgba(0, 255, 220, 0.95)`,
+    eyeR:    `rgba(0, 255, 220, 0.95)`,
+    mouth:   `rgba(255, 100, 200, 0.95)`,
+  };
+  ctx.lineWidth = 0.7;
+  ctx.shadowBlur = 4;
+  for (const region of Object.keys(colorByRegion)) {
+    ctx.strokeStyle = colorByRegion[region];
+    ctx.shadowColor = colorByRegion[region];
+    ctx.beginPath();
+    for (const [a, b] of EDGES) {
+      if (REGION[a] !== region && REGION[b] !== region) continue;
+      const pa = pts2d[a], pb = pts2d[b];
+      if (Math.hypot(pa[0]-pb[0], pa[1]-pb[1]) > maxEdge) continue;
+      ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]);
+    }
+    ctx.stroke();
+  }
+
+  // (4) landmark dots — small for most, bright bigger for pupils & nose tip
+  ctx.shadowBlur = 4;
+  for (let i = 0; i < pts2d.length; i++) {
+    const [x, y] = pts2d[i];
+    const region = REGION[i];
+    if (region === 'pupilL' || region === 'pupilR') {
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.7 + 0.3 * pulse})`;
+      ctx.shadowColor = '#0ff';
+      ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(180, 255, 220, 0.85)';
+      ctx.shadowColor = '#10b981';
+      ctx.beginPath(); ctx.arc(x, y, 1.3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.shadowBlur = 0;
+
+  // (5) Bracket markers at bbox corners (sci-fi HUD)
+  if (bbox2d) {
+    const [bx1, by1, bx2, by2] = bbox2d;
+    const len = Math.min(bx2 - bx1, by2 - by1) * 0.18;
+    ctx.strokeStyle = `rgba(16, 230, 130, ${0.6 + 0.4 * pulse})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    // top-left
+    ctx.moveTo(bx1, by1 + len); ctx.lineTo(bx1, by1); ctx.lineTo(bx1 + len, by1);
+    // top-right
+    ctx.moveTo(bx2 - len, by1); ctx.lineTo(bx2, by1); ctx.lineTo(bx2, by1 + len);
+    // bottom-left
+    ctx.moveTo(bx1, by2 - len); ctx.lineTo(bx1, by2); ctx.lineTo(bx1 + len, by2);
+    // bottom-right
+    ctx.moveTo(bx2 - len, by2); ctx.lineTo(bx2, by2); ctx.lineTo(bx2, by2 - len);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// Shared: filter Delaunay triangles by length cap + anatomical constraint.
+function filterTriangles(tris, pts2d, maxEdge) {
+  const out = [];
+  for (const tr of tris) {
+    const a = pts2d[tr[0]], b = pts2d[tr[1]], c = pts2d[tr[2]];
+    const e1 = Math.hypot(a[0]-b[0], a[1]-b[1]);
+    const e2 = Math.hypot(b[0]-c[0], b[1]-c[1]);
+    const e3 = Math.hypot(c[0]-a[0], c[1]-a[1]);
+    const longest = Math.max(e1, e2, e3);
+    const shortest = Math.min(e1, e2, e3);
+    if (longest > maxEdge) continue;
+    if (longest / shortest > 6) continue;
+    if (trianglesCrossesForbidden(tr[0], tr[1], tr[2], pts2d)) continue;
+    out.push(tr);
+  }
+  return out;
+}
+
+// Apply TPS transfer T (M×N) to current 98 WFLW points (N×2).
+// Returns Array of [x,y] of length M.
+function denseFromControl(pts2d) {
+  const { M, N, T } = denseTemplate;
+  const out = new Array(M);
+  for (let j = 0; j < M; j++) {
+    const base = j * N;
+    let x = 0, y = 0;
+    for (let i = 0; i < N; i++) {
+      const w = T[base + i];
+      x += w * pts2d[i][0];
+      y += w * pts2d[i][1];
+    }
+    out[j] = [x, y];
+  }
+  return out;
+}
+
+// Estimate head pose (yaw, pitch, roll, scale) from the 98 WFLW points.
+// Cheap analytic estimator — no PnP needed for "looks 3D" rendering.
+function estimatePose(pts2d) {
+  const eyeL = pts2d[96];   // left pupil
+  const eyeR = pts2d[97];   // right pupil
+  const nose = pts2d[57];   // nose tip
+  const mouthT = pts2d[79]; // upper-mid mouth
+  // roll: tilt of eye line
+  const eyeDX = eyeR[0] - eyeL[0];
+  const eyeDY = eyeR[1] - eyeL[1];
+  const roll = Math.atan2(eyeDY, eyeDX);
+  const eyeDist = Math.hypot(eyeDX, eyeDY);
+  // yaw: nose horizontal position relative to face center.
+  // contour 0 and 32 are far-left/far-right of head; in canonical face,
+  // nose sits exactly at midpoint. Drift indicates yaw.
+  const noseX = nose[0];
+  const leftW  = noseX - pts2d[0][0];
+  const rightW = pts2d[32][0] - noseX;
+  // signed asymmetry → yaw angle (positive = head turned to user's right)
+  const yaw = Math.atan2(rightW - leftW, (rightW + leftW) * 0.7);
+  // pitch: ratio of (eye-to-nose) over (eye-to-mouth) vertical distance.
+  const eyeMidY = 0.5 * (eyeL[1] + eyeR[1]);
+  const enY = nose[1] - eyeMidY;
+  const emY = mouthT[1] - eyeMidY;
+  // canonical: en/em ≈ 0.5; deviation = pitch.
+  const ratio = enY / Math.max(emY, 1e-3);
+  const pitch = (ratio - 0.5) * 1.5;
+  return { yaw, pitch, roll, scale: eyeDist };
+}
+
+// Build a 3D rotation matrix from yaw/pitch/roll (extrinsic ZYX).
+function buildRotation(yaw, pitch, roll) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const cr = Math.cos(roll), sr = Math.sin(roll);
+  // R = Rz(roll) @ Ry(yaw) @ Rx(pitch)
+  // expanded:
+  return [
+    [cr*cy + sr*sp*sy, sr*cp,  -cr*sy + sr*sp*cy],
+    [-sr*cy + cr*sp*sy, cr*cp, sr*sy + cr*sp*cy],
+    [cp*sy,              -sp,    cp*cy],
+  ];
+}
+
+// Apply rotation to canonical (cx, cy, cz) where canonical XY are in [0,1]
+// crop-relative coords. Returns rotated 3D (xr, yr, zr).
+// We work in a face-local frame centered on canonical mean (0.5, 0.5, 0.5).
+function rotateAroundFaceCenter(cx, cy, cz, R) {
+  // canonical mean offset to face-center
+  const x = cx - 0.5;
+  const y = cy - 0.5;
+  const z = cz - 0.5;
+  // 3D rotation
+  const xr = R[0][0]*x + R[0][1]*y + R[0][2]*z;
+  const yr = R[1][0]*x + R[1][1]*y + R[1][2]*z;
+  const zr = R[2][0]*x + R[2][1]*y + R[2][2]*z;
+  return [xr + 0.5, yr + 0.5, zr + 0.5];
+}
+
+function drawDense(pts2d, bbox2d, matchFlag) {
+  if (!denseTemplate) return;
+  // Sanity gate
+  let pminx = Infinity, pminy = Infinity, pmaxx = -Infinity, pmaxy = -Infinity;
+  for (const [x, y] of pts2d) {
+    if (x < pminx) pminx = x; if (x > pmaxx) pmaxx = x;
+    if (y < pminy) pminy = y; if (y > pmaxy) pmaxy = y;
+  }
+  const pw = pmaxx - pminx, ph = pmaxy - pminy;
+  if (pw < 20 || ph < 20) return;
+  const aspect = pw / ph;
+  if (aspect < 0.4 || aspect > 2.5) return;
+  if (pw > overlay.width * 0.95 || ph > overlay.height * 0.95) return;
+
+  const dense = denseFromControl(pts2d);
+  const canon = denseTemplate.canonical;   // [M, 2] in [0,1] crop space
+  const Zc = denseTemplate.zCanonical;     // [M]
+
+  // Pose-driven per-vertex Z: rotate canonical (Xc, Yc, Zc) by current pose,
+  // pick rotated Z. This makes back-of-head vertices darken/thin when user
+  // turns their head — that's the "3D drives the mesh" feel.
+  const pose = estimatePose(pts2d);
+  const R = buildRotation(pose.yaw, pose.pitch, pose.roll);
+  const Z = new Float32Array(canon.length);
+  for (let i = 0; i < canon.length; i++) {
+    const [cx, cy] = canon[i];
+    const cz = Zc[i];
+    const rot = rotateAroundFaceCenter(cx, cy, cz, R);
+    Z[i] = rot[2];   // rotated depth
+  }
+  // Normalize Z to [0,1] for shading
+  let zMin = Infinity, zMax = -Infinity;
+  for (let i = 0; i < Z.length; i++) {
+    if (Z[i] < zMin) zMin = Z[i]; if (Z[i] > zMax) zMax = Z[i];
+  }
+  const zRange = Math.max(zMax - zMin, 1e-3);
+  for (let i = 0; i < Z.length; i++) Z[i] = (Z[i] - zMin) / zRange;
+
+  // ID base RGB
+  // Light yellow base
+  let baseR = 255, baseG = 245, baseB = 170;
+  if (matchFlag === true)  { baseR = 60;  baseG = 230; baseB = 130; }
+  if (matchFlag === false) { baseR = 255; baseG = 80;  baseB = 90;  }
+
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  const maxEdge = Math.hypot(pw, ph) * 0.20;
+
+  // ---- Helper: draw one straight segment a→b with depth-modulated brightness ----
+  // alpha grows as (avg depth) → forward (closer to camera = brighter).
+  function drawShadedSeg(a, b, baseAlpha) {
+    const pa = dense[a], pb = dense[b];
+    if (Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) > maxEdge) return;
+    const z = 0.5 * (Z[a] + Z[b]);                // [-0.1 .. 1.0]
+    // map depth to alpha: forward=1.0, back=0.15
+    const alpha = baseAlpha * (0.12 + 0.88 * Math.max(0, Math.min(1, z)));
+    // forward edges slightly thicker (depth → linewidth) for parallax feel
+    ctx.lineWidth = 0.3 + 0.6 * Math.max(0, Math.min(1, z));
+    ctx.strokeStyle = `rgba(${baseR}, ${baseG}, ${baseB}, ${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]);
+    ctx.stroke();
+  }
+
+  // ---- Triangulated tessellation (covers the whole face) ----
+  // Each triangle edge drawn once with depth shading. We use a set to avoid
+  // drawing shared edges twice.
+  const drawnEdges = new Set();
+  const ek = (a, b) => a < b ? a + ',' + b : b + ',' + a;
+  for (const [a, b, c] of denseTemplate.triangles) {
+    for (const [u, v] of [[a, b], [b, c], [c, a]]) {
+      const k = ek(u, v);
+      if (drawnEdges.has(k)) continue;
+      drawnEdges.add(k);
+      drawShadedSeg(u, v, 0.7);
+    }
+  }
+
+  // ---- Flow lines on top (brighter, define the structure) ----
+  for (const chain of denseTemplate.flowOpen) {
+    for (let k = 0; k + 1 < chain.length; k++) {
+      drawShadedSeg(chain[k], chain[k + 1], 0.95);
+    }
+  }
+  for (const chain of denseTemplate.flowClosed) {
+    for (let k = 0; k < chain.length; k++) {
+      drawShadedSeg(chain[k], chain[(k + 1) % chain.length], 0.95);
+    }
+  }
+  // Anatomical outlines (eyes, mouth, brows, contour) — brightest
+  for (const [a, b] of EDGES) {
+    drawShadedSeg(a, b, 1.1);
+  }
+
+  // ---- Specular highlights: bright dot at the brightest face points ----
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < dense.length; i++) {
+    const z = Z[i];
+    if (z < 0.85) continue;                       // only forward-most points
+    const [x, y] = dense[i];
+    const power = (z - 0.85) / 0.15;               // 0..1
+    const r = 1.5 + 2.0 * power;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r * 2.5);
+    grad.addColorStop(0, `rgba(${baseR}, ${baseG}, ${baseB}, ${0.7 * power})`);
+    grad.addColorStop(1, `rgba(${baseR}, ${baseG}, ${baseB}, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(x, y, r * 2.5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawScan(pts2d, bbox2d, matchFlag) {
+  // Sanity gate
+  let pminx = Infinity, pminy = Infinity, pmaxx = -Infinity, pmaxy = -Infinity;
+  for (const [x, y] of pts2d) {
+    if (x < pminx) pminx = x; if (x > pmaxx) pmaxx = x;
+    if (y < pminy) pminy = y; if (y > pmaxy) pmaxy = y;
+  }
+  const pw = pmaxx - pminx, ph = pmaxy - pminy;
+  if (pw < 20 || ph < 20) return;
+  const aspect = pw / ph;
+  if (aspect < 0.4 || aspect > 2.5) return;
+  if (pw > overlay.width * 0.95 || ph > overlay.height * 0.95) return;
+
+  const maxEdge = Math.hypot(pw, ph) * 0.35;
+
+  // ID coloring: white when no lock, green when match, red when stranger
+  let baseColor = '255, 255, 255';
+  let glowColor = 'rgba(255, 255, 255, 0.4)';
+  if (matchFlag === true)  { baseColor = '60, 230, 130'; glowColor = 'rgba(60, 230, 130, 0.55)'; }
+  if (matchFlag === false) { baseColor = '255, 80, 90';  glowColor = 'rgba(255, 80, 90, 0.5)';  }
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.shadowBlur = 2;
+  ctx.shadowColor = glowColor;
+
+  // (1) Triangulated mesh scaffolding — hardcoded MESH_EDGES forming a
+  // tessellation across the face surface. Very thin straight lines.
+  ctx.lineWidth = 0.4;
+  ctx.strokeStyle = `rgba(${baseColor}, 0.55)`;
+  ctx.beginPath();
+  for (const [a, b] of MESH_EDGES) {
+    const pa = pts2d[a], pb = pts2d[b];
+    if (Math.hypot(pa[0]-pb[0], pa[1]-pb[1]) > maxEdge) continue;
+    ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]);
+  }
+  ctx.stroke();
+
+  // (2) Smooth anatomical contours OVER the scaffolding — Catmull-Rom splines.
+  // These overwrite the straight segments along eyes/mouth/contour so those
+  // features look curved.
+  ctx.lineWidth = 0.85;
+  ctx.strokeStyle = `rgba(${baseColor}, 0.95)`;
+  for (const path of FEATURE_PATHS) {
+    ctx.beginPath();
+    smoothPath(ctx, take(pts2d, path.idx), path.closed);
+    if (path.closed) ctx.closePath();
+    ctx.stroke();
+  }
+
+  // (3) Small bright dots only at key anatomical points
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = `rgba(${baseColor}, 0.95)`;
+  const KEY = [60, 64, 68, 72, 76, 82, 57, 96, 97];
+  for (const i of KEY) {
+    const [x, y] = pts2d[i];
+    ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Hybrid: 478 MP vertices warped from 98 WFLW controls via precomputed TPS.
+// Pose-robust because WFLW handles rotation; density comes from MP topology.
+function hybridFromWflw(pts2d) {
+  const { T, zNorm } = hybridTemplate;
+  const M = 478, N = 98;
+  const out = new Array(M);
+  for (let j = 0; j < M; j++) {
+    const base = j * N;
+    let x = 0, y = 0;
+    for (let i = 0; i < N; i++) {
+      const w = T[base + i];
+      x += w * pts2d[i][0];
+      y += w * pts2d[i][1];
+    }
+    out[j] = [x, y, zNorm[j]];   // z is precomputed canonical (0..1, forward=1)
+  }
+  return out;
+}
+
+function drawHybrid(pts3d, matchFlag) {
+  // pts3d is already an Array of [x, y, z_norm] in overlay coords.
+  if (!meshTopology || pts3d.length !== 478) return;
+  // Light yellow base
+  let baseR = 255, baseG = 245, baseB = 170;
+  if (matchFlag === true)  { baseR = 60;  baseG = 230; baseB = 130; }
+  if (matchFlag === false) { baseR = 255; baseG = 80;  baseB = 90;  }
+
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  let pminx = Infinity, pmaxx = -Infinity, pminy = Infinity, pmaxy = -Infinity;
+  for (const [x, y] of pts3d) {
+    if (x < pminx) pminx = x; if (x > pmaxx) pmaxx = x;
+    if (y < pminy) pminy = y; if (y > pmaxy) pmaxy = y;
+  }
+  const maxEdge = Math.hypot(pmaxx - pminx, pmaxy - pminy) * 0.15;
+
+  function shadedEdge(a, b, baseAlpha) {
+    const pa = pts3d[a], pb = pts3d[b];
+    const len = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+    if (len > maxEdge) return;
+    const zNorm = 0.5 * (pa[2] + pb[2]);                  // 0..1, forward=1
+    const alpha = baseAlpha * 0.5 * (0.10 + 0.90 * zNorm);
+    ctx.lineWidth = 0.04 + 0.11 * zNorm;
+    // Depth-tinted: forward = white (or ID tint), far = light green.
+    const warm = zNorm;
+    const cool = 1 - zNorm;
+    const r  = Math.round(baseR * warm + 170 * cool);   // far green: (170, 240, 200)
+    const g  = Math.round(baseG * warm + 240 * cool);
+    const b_ = Math.round(baseB * warm + 200 * cool);
+    ctx.strokeStyle = `rgba(${r}, ${g}, ${b_}, ${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]);
+    ctx.stroke();
+  }
+
+  for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
+  for (const grp of [meshTopology.FACE_OVAL, meshTopology.LIPS,
+                     meshTopology.LEFT_EYE, meshTopology.RIGHT_EYE,
+                     meshTopology.LEFT_EYEBROW, meshTopology.RIGHT_EYEBROW,
+                     meshTopology.NOSE]) {
+    for (const [a, b] of grp) shadedEdge(a, b, 1.0);
+  }
+  for (const grp of [meshTopology.LEFT_IRIS, meshTopology.RIGHT_IRIS]) {
+    for (const [a, b] of grp) shadedEdge(a, b, 1.15);
+  }
+
+  ctx.restore();
+}
+
+// Render the true-3D mesh from 478 predicted (x,y,z) landmarks.
+// Each edge is shaded by the average z of its endpoints (forward = brighter, thicker).
+function drawTrue3D(pts3d, matchFlag) {
+  if (!meshTopology || pts3d.length !== 478) return;
+  // Light yellow base
+  let baseR = 255, baseG = 245, baseB = 170;
+  if (matchFlag === true)  { baseR = 60;  baseG = 230; baseB = 130; }
+  if (matchFlag === false) { baseR = 255; baseG = 80;  baseB = 90;  }
+
+  // Normalize z across the face for shading
+  let zMin = Infinity, zMax = -Infinity;
+  for (const [, , z] of pts3d) {
+    if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+  }
+  const zRange = Math.max(zMax - zMin, 1e-3);
+
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  // Edge length sanity gate
+  let pminx = Infinity, pmaxx = -Infinity, pminy = Infinity, pmaxy = -Infinity;
+  for (const [x, y] of pts3d) {
+    if (x < pminx) pminx = x; if (x > pmaxx) pmaxx = x;
+    if (y < pminy) pminy = y; if (y > pmaxy) pmaxy = y;
+  }
+  const maxEdge = Math.hypot(pmaxx - pminx, pmaxy - pminy) * 0.15;
+
+  function shadedEdge(a, b, baseAlpha) {
+    const pa = pts3d[a], pb = pts3d[b];
+    const len = Math.hypot(pa[0] - pb[0], pa[1] - pb[1]);
+    if (len > maxEdge) return;
+    const zAvg = 0.5 * (pa[2] + pb[2]);
+    const zNorm = 1 - (zAvg - zMin) / zRange;            // 1=forward, 0=back
+    const alpha = baseAlpha * 0.5 * (0.10 + 0.90 * zNorm);
+    ctx.lineWidth = 0.04 + 0.11 * zNorm;
+    // depth-tinted color (same scheme as hybrid)
+    const warm = zNorm, cool = 1 - zNorm;
+    // far end stays light yellow (slightly dimmer / warmer)
+    const r  = Math.round(baseR * warm + 220 * cool);
+    const g  = Math.round(baseG * warm + 200 * cool);
+    const b_ = Math.round(baseB * warm + 120 * cool);
+    ctx.strokeStyle = `rgba(${r}, ${g}, ${b_}, ${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]);
+    ctx.stroke();
+  }
+
+  // (1) Full tessellation — dense mesh
+  for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
+
+  // (2) Brighter anatomical outlines on top
+  for (const grp of [meshTopology.FACE_OVAL, meshTopology.LIPS,
+                     meshTopology.LEFT_EYE, meshTopology.RIGHT_EYE,
+                     meshTopology.LEFT_EYEBROW, meshTopology.RIGHT_EYEBROW,
+                     meshTopology.NOSE]) {
+    for (const [a, b] of grp) shadedEdge(a, b, 1.0);
+  }
+  // Iris circles, very bright
+  for (const grp of [meshTopology.LEFT_IRIS, meshTopology.RIGHT_IRIS]) {
+    for (const [a, b] of grp) shadedEdge(a, b, 1.15);
+  }
+
+  ctx.restore();
+}
+
+function drawMesh(pts2d, bbox2d, matchFlag) {
+  if (mode === 'off') return;
+  if (mode === 'dense') { drawDense(pts2d, bbox2d, matchFlag); return; }
+  if (mode === 'scan') { drawScan(pts2d, bbox2d, matchFlag); return; }
+  if (mode === 'holo') { drawHolo(pts2d, bbox2d); return; }
+  const N = pts2d.length;
+
+  if (mode === 'contour') {
+    ctx.lineWidth = 0.6;
+    ctx.strokeStyle = '#10b981';
+    ctx.beginPath();
+    for (const [a, b] of EDGES.filter(([a,b]) => a < 33 && b < 33)) {
+      ctx.moveTo(pts2d[a][0], pts2d[a][1]);
+      ctx.lineTo(pts2d[b][0], pts2d[b][1]);
+    }
+    ctx.stroke();
+    return;
+  }
+
+  if (mode === 'dots') {
+    ctx.fillStyle = '#10b981';
+    for (const [x, y] of pts2d) {
+      ctx.beginPath(); ctx.arc(x, y, 1.1, 0, Math.PI * 2); ctx.fill();
+    }
+    return;
+  }
+
+  // mode === 'mesh': triangulated face wireframe with translucent fill
+  // Sanity check: the landmark cloud must have a reasonable spread.
+  // If detection returned garbage, points scatter wildly and we should bail.
+  let pminx = Infinity, pminy = Infinity, pmaxx = -Infinity, pmaxy = -Infinity;
+  for (const [x, y] of pts2d) {
+    if (x < pminx) pminx = x; if (x > pmaxx) pmaxx = x;
+    if (y < pminy) pminy = y; if (y > pmaxy) pmaxy = y;
+  }
+  const pw = pmaxx - pminx, ph = pmaxy - pminy;
+  // bail if cloud is degenerate (too small or too tall/thin)
+  if (pw < 20 || ph < 20) return;
+  const aspect = pw / ph;
+  if (aspect < 0.4 || aspect > 2.5) return;
+  // also bail if cloud is bigger than the canvas (clearly broken)
+  if (pw > overlay.width * 0.95 || ph > overlay.height * 0.95) return;
+
+  const maxEdge = Math.hypot(pw, ph) * 0.35;
+  const goodTris = filterTriangles(delaunay(pts2d), pts2d, maxEdge);
+
+  // 1) translucent fill — gives subtle "glass" look
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+  for (const t of goodTris) {
+    const a = pts2d[t[0]], b = pts2d[t[1]], c = pts2d[t[2]];
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]);
+    ctx.closePath(); ctx.fill();
+  }
+  // 2) wireframe edges, semi-transparent green, thin
+  ctx.lineWidth = 0.4;
+  ctx.strokeStyle = 'rgba(16, 185, 129, 0.55)';
+  ctx.beginPath();
+  for (const t of goodTris) {
+    const a = pts2d[t[0]], b = pts2d[t[1]], c = pts2d[t[2]];
+    ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+    ctx.lineTo(c[0], c[1]); ctx.lineTo(a[0], a[1]);
+  }
+  ctx.stroke();
+  // 3) bright contour on top (face silhouette + features) — same length cap
+  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = '#10b981';
+  ctx.beginPath();
+  for (const [a, b] of EDGES) {
+    const pa = pts2d[a], pb = pts2d[b];
+    if (Math.hypot(pa[0]-pb[0], pa[1]-pb[1]) > maxEdge) continue;
+    ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]);
+  }
+  ctx.stroke();
+  // 4) small bright dots on every landmark
+  ctx.fillStyle = 'rgba(180, 255, 220, 0.9)';
+  for (const [x, y] of pts2d) {
+    ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+let busy = false;
+let lastFaces = [];           // last detected bboxes (video coords)
+let lastAllPts2d = [];        // array of pts-2d arrays, one per face
+let lastFaceMatch = [];       // per-face match flag (null/false/true)
+let lastFaceSims = [];        // per-face cosine similarity (null when no ref)
+let emaSim = null;            // EMA-smoothed similarity (faceid mode)
+const SIM_THRESH = 0.15;      // tuned for tiny model + pose tolerance
+const SIM_EMA = 0.7;          // higher = smoother (less flicker on head turn)
+// EMA-smoothed 98-WFLW points (key for everything else). One per face slot.
+let smoothedPts2d = [];
+const EMA_ALPHA = 0.35;       // 1 = no smoothing, 0 = frozen
+
+async function tick() {
+  if (!running) return;
+  if (!video.videoWidth || !video.videoHeight) { requestAnimationFrame(tick); return; }
+
+  const w = overlay.clientWidth, h = overlay.clientHeight;
+  if (overlay.width !== w || overlay.height !== h) {
+    overlay.width = w; overlay.height = h;
+  }
+  ctx.clearRect(0, 0, w, h);
+
+  if (!busy) {
+    busy = true;
+    const t0 = performance.now();
+    detect(video).then(async (faces) => {
+      detectMs = performance.now() - t0;
+      lastFaceCount = faces.length;
+      lastFaces = faces;
+      if (faces.length === 0) { lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = []; lastSim = null; lastLive = null; lastSpoof = null; emaLive = null; smoothedPts2d = []; busy = false; return; }
+      if (faces.length !== smoothedPts2d.length) smoothedPts2d = [];   // reset on face count change
+      const t1 = performance.now();
+      const all = [];
+      const all3d = [];
+      const allHybrid = [];
+      const matchFlags = [];
+      const sims = [];
+      // detect-only mode: skip everything except bbox display
+      if (mode === 'detect') {
+        lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = [];
+        lastSim = null; lmMs = 0;
+        busy = false; return;
+      }
+      // face-ID mode: detect + recognize (nano embedding), no mesh/landmark.
+      if (mode === 'faceid') {
+        lastAllPts2d = []; last3D = []; lastHybrid = [];
+        const matchFlags = []; const sims = [];
+        for (const f of faces) {
+          if (refEmb) {
+            const t2 = performance.now();
+            const e = await predictEmbedding(f);
+            recMs = performance.now() - t2;
+            const s = cosSim(e, refEmb);
+            sims.push(s);
+            matchFlags.push(s > SIM_THRESH);
+          } else {
+            sims.push(null);
+            matchFlags.push(null);
+          }
+        }
+        // EMA-smooth the largest face's similarity to avoid flicker on head turns.
+        if (sims.length && sims[0] != null) {
+          emaSim = (emaSim == null) ? sims[0] : SIM_EMA * emaSim + (1 - SIM_EMA) * sims[0];
+          // Overwrite the displayed sim with the smoothed value (only the primary face).
+          lastFaceSims = [emaSim, ...sims.slice(1)];
+          lastFaceMatch = [emaSim > SIM_THRESH, ...matchFlags.slice(1)];
+        } else {
+          lastFaceMatch = matchFlags;
+          lastFaceSims = sims;
+          emaSim = null;
+        }
+        lastSim = lastFaceSims.some(s => s != null)
+          ? Math.max(...lastFaceSims.filter(s => s != null)) : null;
+        lmMs = 0;
+        busy = false; return;
+      }
+      for (const f of faces) {
+        // 98-point landmark (used by tps/scan/holo/hybrid modes)
+        const pts = await predictLandmarks(f);
+        let ptsOverlay = videoToOverlay(pts);
+        // EMA-smooth on the 98 control points to kill jitter when face is still.
+        // We keep one smoothing slot per face index; reset if face count changes.
+        const slot = all.length;
+        if (smoothedPts2d[slot] && smoothedPts2d[slot].length === ptsOverlay.length) {
+          // Detect if the head moved significantly; if so, snap to new.
+          const prev = smoothedPts2d[slot];
+          let maxJump = 0;
+          for (let i = 0; i < ptsOverlay.length; i++) {
+            const dx = ptsOverlay[i][0] - prev[i][0];
+            const dy = ptsOverlay[i][1] - prev[i][1];
+            const j = Math.hypot(dx, dy);
+            if (j > maxJump) maxJump = j;
+          }
+          if (maxJump > 25) {
+            // big move -> snap (don't lag behind real motion)
+            smoothedPts2d[slot] = ptsOverlay.map(p => p.slice());
+          } else {
+            // small jitter -> EMA toward new
+            const out = new Array(ptsOverlay.length);
+            for (let i = 0; i < ptsOverlay.length; i++) {
+              out[i] = [
+                prev[i][0] + EMA_ALPHA * (ptsOverlay[i][0] - prev[i][0]),
+                prev[i][1] + EMA_ALPHA * (ptsOverlay[i][1] - prev[i][1]),
+              ];
+            }
+            smoothedPts2d[slot] = out;
+          }
+        } else {
+          smoothedPts2d[slot] = ptsOverlay.map(p => p.slice());
+        }
+        ptsOverlay = smoothedPts2d[slot];
+        all.push(ptsOverlay);
+        // 478-point 3D landmark (used by true-3D mode)
+        if (mode === 'true3d') {
+          const p3 = await predict3D(f);
+          const ow = overlay.clientWidth, vw = video.videoWidth, vh = video.videoHeight;
+          const sxr = ow / vw, syr = overlay.clientHeight / vh;
+          const mirrored = p3.map(([x, y, z]) => [ow - x * sxr, y * syr, z * sxr]);
+          all3d.push(mirrored);
+        }
+        // Hybrid: TPS-warp MP topology using WFLW positions (pose-robust)
+        if (mode === 'hybrid') {
+          allHybrid.push(hybridFromWflw(ptsOverlay));
+        }
+        if (refEmb) {
+          const t2 = performance.now();
+          const e = await predictEmbedding(f);
+          recMs = performance.now() - t2;
+          const s = cosSim(e, refEmb);
+          sims.push(s);
+          matchFlags.push(s > 0.3);
+        } else {
+          matchFlags.push(null);
+          sims.push(null);
+        }
+        // Anti-spoof check on the largest (first) face only — keeps cost low.
+        if (faces.indexOf(f) === 0) {
+          const t3 = performance.now();
+          const sp = await predictSpoof(f);
+          spoofMs = performance.now() - t3;
+          // EMA smoothing on live probability
+          emaLive = (emaLive == null) ? sp.live
+                                       : SPOOF_EMA * emaLive + (1 - SPOOF_EMA) * sp.live;
+          lastLive = emaLive;
+          lastSpoof = 1 - emaLive;
+          window.__lastRawLive = sp.live;   // for debug HUD
+        }
+      }
+      lmMs = (performance.now() - t1) / faces.length;
+      lastAllPts2d = all;
+      last3D = all3d;
+      lastHybrid = allHybrid;
+      lastFaceMatch = matchFlags;
+      // overall sim = max across faces (best match)
+      lastSim = sims.some(s => s != null) ? Math.max(...sims.filter(s => s != null)) : null;
+      busy = false;
+    }).catch((e) => { console.error(e); busy = false; });
+  }
+
+  // Compute bbox2d for each face (mirrored to overlay space) — passed to
+  // the renderer so holo mode can draw bracket markers.
+  const bbox2ds = [];
+  if (lastFaces.length) {
+    const ow = w, vw = video.videoWidth, vh = video.videoHeight;
+    const sxr = ow / vw, syr = h / vh;
+    for (const b of lastFaces) {
+      const x1 = ow - b.x2 * sxr, x2 = ow - b.x1 * sxr;
+      const y1 = b.y1 * syr, y2 = b.y2 * syr;
+      bbox2ds.push([x1, y1, x2, y2]);
+    }
+    if (mode === 'detect') {
+      // Detect-only mode: prominent green bbox + score label.
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 4;
+      ctx.font = 'bold 13px monospace';
+      for (let i = 0; i < bbox2ds.length; i++) {
+        const [x1, y1, x2, y2] = bbox2ds[i];
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        const label = `face ${(lastFaces[i].score * 100).toFixed(0)}%`;
+        const tw = ctx.measureText(label).width + 8;
+        ctx.fillStyle = 'rgba(16,185,129,0.85)';
+        ctx.fillRect(x1, Math.max(0, y1 - 18), tw, 18);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, x1 + 4, Math.max(12, y1 - 5));
+      }
+    } else if (mode === 'faceid') {
+      // Face ID mode: color by match status.
+      // green = match (sim > 0.3), red = no match, gray = no reference locked.
+      ctx.lineWidth = 4;
+      ctx.font = 'bold 13px monospace';
+      for (let i = 0; i < bbox2ds.length; i++) {
+        const [x1, y1, x2, y2] = bbox2ds[i];
+        const sim = lastFaceSims[i];
+        let color, label;
+        if (sim == null) {
+          color = '#888'; label = 'NOT LOCKED';
+        } else if (sim > SIM_THRESH) {
+          color = '#10b981'; label = `MATCH ${sim.toFixed(2)}`;
+        } else {
+          color = '#ef4444'; label = `NO MATCH ${sim.toFixed(2)}`;
+        }
+        ctx.strokeStyle = color;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        const tw = ctx.measureText(label).width + 8;
+        // semi-transparent bg matching the border color
+        ctx.fillStyle = color === '#10b981' ? 'rgba(16,185,129,0.85)'
+                       : color === '#ef4444' ? 'rgba(239,68,68,0.85)'
+                                              : 'rgba(136,136,136,0.85)';
+        ctx.fillRect(x1, Math.max(0, y1 - 18), tw, 18);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, x1 + 4, Math.max(12, y1 - 5));
+      }
+    } else if (mode !== 'holo') {
+      // dim debug rectangle for non-detect, non-holo modes
+      ctx.strokeStyle = 'rgba(255, 80, 80, 0.4)';
+      ctx.lineWidth = 1;
+      for (const [x1, y1, x2, y2] of bbox2ds) ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }
+  }
+  if (mode === 'detect' || mode === 'faceid') {
+    // nothing else — bbox already drawn above
+  } else if (mode === 'hybrid' && lastHybrid.length) {
+    for (let i = 0; i < lastHybrid.length; i++) drawHybrid(lastHybrid[i], lastFaceMatch[i]);
+  } else if (mode === 'true3d' && last3D.length) {
+    for (let i = 0; i < last3D.length; i++) drawTrue3D(last3D[i], lastFaceMatch[i]);
+  } else {
+    for (let i = 0; i < lastAllPts2d.length; i++) {
+      drawMesh(lastAllPts2d[i], bbox2ds[i], lastFaceMatch[i]);
+    }
+  }
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsT > 500) {
+    fps = Math.round(frameCount * 1000 / (now - lastFpsT));
+    frameCount = 0; lastFpsT = now;
+  }
+  const tags = [
+    `faces ${lastFaceCount}`,
+    `det ${detectMs.toFixed(0)}ms`,
+    `lm ${lmMs.toFixed(0)}ms`,
+    `${fps} fps`,
+  ];
+  if (refEmb) {
+    tags.push(`rec ${recMs.toFixed(0)}ms`);
+    if (lastSim != null) {
+      tags.push(`id ${lastSim.toFixed(2)}${lastSim > 0.3 ? ' ✓' : ''}`);
+    } else {
+      tags.push('no face');
+    }
+  }
+  if (lastLive != null && lastFaceCount > 0) {
+    const isLive = lastLive > SPOOF_THRESH;
+    const pct = (lastLive * 100).toFixed(0);
+    const label = isLive ? `LIVE ${pct}%` : `SPOOF ${(lastSpoof*100).toFixed(0)}%`;
+    const color = isLive ? '#10b981' : '#ef4444';
+    tags.push(`<span style="color:${color}">${label}</span>`);
+    const raw = window.__lastRawLive;
+    if (raw != null) tags.push(`raw L=${(raw*100).toFixed(1)}%`);
+  }
+  setHUD(tags);
+  requestAnimationFrame(tick);
+}
+
+// Mode picker (the first picker row)
+document.querySelectorAll('#picker .pick').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('#picker .pick').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    mode = p.dataset.mode;
+  });
+});
+
+btnStart.onclick = async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' },
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    btnStart.disabled = true;
+    btnLock.disabled = false;
+    btnStop.disabled = false;
+    setStatus(`camera ${video.videoWidth}x${video.videoHeight}`, 'ready');
+    running = true;
+    requestAnimationFrame(tick);
+  } catch (e) {
+    setStatus('camera error: ' + e.message, 'error');
+  }
+};
+btnLock.onclick = async () => {
+  // capture reference from the currently-largest face
+  if (lastFaces.length === 0) {
+    setStatus('no face detected — face the camera and try again', 'error');
+    return;
+  }
+  let best = lastFaces[0], bestArea = 0;
+  for (const f of lastFaces) {
+    const a = (f.x2-f.x1) * (f.y2-f.y1);
+    if (a > bestArea) { bestArea = a; best = f; }
+  }
+  try {
+    refEmb = await predictEmbedding(best);
+    btnLock.style.display = 'none';
+    btnUnlock.style.display = '';
+    btnUnlock.disabled = false;
+    setStatus('locked to your face — mesh will turn green for you, red for others', 'ready');
+  } catch (e) {
+    setStatus('lock failed: ' + e.message, 'error');
+  }
+};
+btnUnlock.onclick = () => {
+  refEmb = null;
+  lastSim = null;
+  lastFaceMatch = lastFaceMatch.map(() => null);
+  btnLock.style.display = '';
+  btnLock.disabled = false;
+  btnUnlock.style.display = 'none';
+  setStatus('unlocked — mesh is white for all faces', 'ready');
+};
+btnStop.onclick = () => {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  setHUD([]);
+  btnStart.disabled = false;
+  btnLock.disabled = true;
+  btnUnlock.disabled = true;
+  btnStop.disabled = true;
+  setStatus('stopped', 'ready');
+};
+
+(async () => {
+  try {
+    setStatus('loading ONNX runtime + models…', 'loading');
+    await loadModels();
+    setStatus('Ready — press Start camera', 'ready');
+    btnStart.disabled = false;
+  } catch (e) {
+    setStatus('init error: ' + e.message, 'error');
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>

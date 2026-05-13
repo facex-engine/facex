@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FaceX — AR Mask Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0a0a0a; color: #e0e0e0; min-height: 100vh;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { color: #fff; font-size: 22px; margin-bottom: 4px; }
+  h1 span { color: #10b981; }
+  p.sub { color: #666; font-size: 13px; margin-bottom: 16px; }
+
+  .status { padding: 8px 12px; font-size: 13px; border-radius: 6px; margin-bottom: 12px; }
+  .status.loading { background: #1c1408; color: #f59e0b; }
+  .status.ready   { background: #052e16; color: #10b981; }
+  .status.error   { background: #1c0a0a; color: #ef4444; }
+
+  .stage {
+    position: relative;
+    width: 100%; max-width: 640px; margin: 0 auto;
+    aspect-ratio: 4/3; background: #111;
+    border: 2px solid #222; border-radius: 14px; overflow: hidden;
+  }
+  video {
+    width: 100%; height: 100%; object-fit: cover;
+    transform: scaleX(-1);  /* mirror selfie */
+  }
+  /* mask layer (we mirror the bbox math too, so we don't apply scaleX here) */
+  #maskLayer {
+    position: absolute; inset: 0; pointer-events: none;
+  }
+  .mask {
+    position: absolute; will-change: transform;
+    transform-origin: 50% 50%;
+    transition: opacity 120ms linear;
+    user-select: none;
+  }
+  .mask.emoji {
+    font-size: 200px; line-height: 1; text-align: center;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+  }
+  .mask.glasses {
+    width: 240px; height: 120px;
+  }
+  .mask.glasses svg { width: 100%; height: 100%; }
+
+  /* HUD */
+  #hud {
+    position: absolute; top: 8px; left: 8px;
+    display: flex; gap: 8px; flex-wrap: wrap;
+    pointer-events: none;
+  }
+  .hud-tag {
+    background: rgba(0,0,0,0.7); color: #10b981;
+    padding: 4px 10px; border-radius: 12px;
+    font-family: monospace; font-size: 12px;
+  }
+
+  .controls {
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+    margin: 12px 0;
+  }
+  .btn {
+    padding: 10px 18px; border: none; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    background: #1a1a1a; color: #aaa; border: 1px solid #2a2a2a;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: #222; color: #ddd; }
+  .btn.primary { background: #10b981; color: #fff; border-color: #059669; }
+  .btn.primary:hover { background: #059669; }
+  .btn.danger { background: #ef4444; color: #fff; border-color: #b91c1c; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .picker {
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+    margin: 8px 0 12px;
+  }
+  .pick {
+    padding: 6px 12px; background: #111; border-radius: 8px;
+    border: 1px solid #222; cursor: pointer; font-size: 14px;
+  }
+  .pick.active { border-color: #10b981; background: #052e16; }
+
+  .info {
+    margin-top: 16px; padding: 14px; background: #0d0d0d;
+    border: 1px solid #1a1a1a; border-radius: 10px;
+    font-size: 12px; color: #777; line-height: 1.6;
+  }
+  .info code { background: #1a1a1a; padding: 1px 6px; border-radius: 3px; color: #10b981; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>Face<span>X</span> — AR mask demo</h1>
+  <p class="sub">Detector + 5 keypoints → mask follows your face. Optional identity gating with the recognition embedding.</p>
+
+  <div id="status" class="status loading">Loading FaceX SDK…</div>
+
+  <div class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="maskLayer"></div>
+    <div id="hud"></div>
+  </div>
+
+  <div class="picker" id="picker">
+    <div class="pick active" data-mask="🎭">🎭</div>
+    <div class="pick" data-mask="😎">😎</div>
+    <div class="pick" data-mask="🤖">🤖</div>
+    <div class="pick" data-mask="👽">👽</div>
+    <div class="pick" data-mask="🦊">🦊</div>
+    <div class="pick" data-mask="🐱">🐱</div>
+    <div class="pick" data-mask="glasses">🕶️ glasses</div>
+  </div>
+
+  <div class="controls">
+    <button id="btnStart" class="btn primary" disabled>Start camera</button>
+    <button id="btnLock"  class="btn" disabled>Lock to me</button>
+    <button id="btnUnlock" class="btn" disabled style="display:none">Unlock</button>
+    <button id="btnStop"  class="btn danger" disabled style="display:none">Stop</button>
+  </div>
+
+  <div class="info">
+    <p><strong>How it works.</strong> Every animation frame we call
+    <code>sdk.detect(video)</code>, get a bounding box + 5 keypoints
+    (eyes, nose, mouth corners), then position the mask at the eye-midpoint,
+    sized to the inter-eye distance, rotated by the eye-line angle.</p>
+    <p><strong>Lock to me.</strong> Saves a 512-dim embedding of your current face.
+    After that, the mask only follows the face whose embedding is closest
+    to yours (cosine similarity > 0.3). Other faces in frame are ignored.</p>
+    <p>Everything runs in the browser — no server, no upload.</p>
+  </div>
+</div>
+
+<script src="facex-sdk.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const video    = $('video');
+const layer    = $('maskLayer');
+const hud      = $('hud');
+const status   = $('status');
+const btnStart = $('btnStart');
+const btnLock  = $('btnLock');
+const btnUnlock= $('btnUnlock');
+const btnStop  = $('btnStop');
+
+let sdk = null;
+let stream = null;
+let running = false;
+let refEmbedding = null;
+let selectedMask = '🎭';
+let lastDetectMs = 0;
+let frames = 0;
+let lastFpsT = performance.now();
+let fps = 0;
+
+// ---- mask DOM elements (one emoji, one glasses SVG)
+function makeEmojiMask(ch) {
+  const d = document.createElement('div');
+  d.className = 'mask emoji';
+  d.textContent = ch;
+  d.style.opacity = '0';
+  return d;
+}
+function makeGlassesMask() {
+  const d = document.createElement('div');
+  d.className = 'mask glasses';
+  d.style.opacity = '0';
+  d.innerHTML = `
+    <svg viewBox="0 0 240 120" xmlns="http://www.w3.org/2000/svg">
+      <g fill="#0a0a0a" stroke="#10b981" stroke-width="4">
+        <circle cx="60"  cy="60" r="46"/>
+        <circle cx="180" cy="60" r="46"/>
+        <line x1="106" y1="60" x2="134" y2="60" stroke-width="6"/>
+      </g>
+    </svg>`;
+  return d;
+}
+let maskEl = makeEmojiMask(selectedMask);
+layer.appendChild(maskEl);
+
+function setMask(kind) {
+  selectedMask = kind;
+  layer.removeChild(maskEl);
+  maskEl = (kind === 'glasses') ? makeGlassesMask() : makeEmojiMask(kind);
+  layer.appendChild(maskEl);
+}
+document.querySelectorAll('.pick').forEach(p => {
+  p.addEventListener('click', () => {
+    document.querySelectorAll('.pick').forEach(x => x.classList.remove('active'));
+    p.classList.add('active');
+    setMask(p.dataset.mask);
+  });
+});
+
+// ---- HUD
+function setStatus(text, klass) {
+  status.textContent = text;
+  status.className = 'status ' + (klass || 'loading');
+}
+function setHUD(parts) {
+  hud.innerHTML = parts.map(p => `<span class="hud-tag">${p}</span>`).join('');
+}
+
+// ---- coordinate transforms
+// Video is rendered mirrored (transform: scaleX(-1)). We need to mirror the
+// x-coords coming from the detector so the mask sits on the user's face as
+// they see themselves.
+function toLayerCoords(face) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  const lw = layer.clientWidth;
+  const lh = layer.clientHeight;
+  const sx = lw / vw;
+  const sy = lh / vh;
+  // mirror the X axis to match the mirrored video display
+  const mirror = (x) => lw - x * sx;
+  const cy = (y) => y * sy;
+  return {
+    x1: mirror(face.x2), x2: mirror(face.x1),
+    y1: cy(face.y1),    y2: cy(face.y2),
+    eyeL: { x: mirror(face.kps[2]), y: cy(face.kps[3]) },  // right kp = visual left
+    eyeR: { x: mirror(face.kps[0]), y: cy(face.kps[1]) },
+    nose: { x: mirror(face.kps[4]), y: cy(face.kps[5]) },
+  };
+}
+
+// ---- detection loop
+function startLoop() {
+  running = true;
+  const tick = () => {
+    if (!running) return;
+    const t0 = performance.now();
+    let faces = sdk.detect(video);
+    lastDetectMs = performance.now() - t0;
+    frames++;
+    if (t0 - lastFpsT > 500) {
+      fps = Math.round(frames * 1000 / (t0 - lastFpsT));
+      frames = 0; lastFpsT = t0;
+    }
+
+    // Identity gating
+    let pick = null;
+    if (refEmbedding && faces.length > 0) {
+      const r = sdk.process(video);   // gives embeddings too
+      faces = r.faces;
+      let bestSim = -1, bestIdx = -1;
+      for (let i = 0; i < r.embeddings.length; i++) {
+        const sim = sdk.cosSim(r.embeddings[i], refEmbedding);
+        if (sim > bestSim) { bestSim = sim; bestIdx = i; }
+      }
+      if (bestSim > 0.3) pick = { face: faces[bestIdx], sim: bestSim };
+    } else if (faces.length > 0) {
+      // largest face
+      let bestArea = 0, bestIdx = 0;
+      faces.forEach((f, i) => {
+        const a = (f.x2 - f.x1) * (f.y2 - f.y1);
+        if (a > bestArea) { bestArea = a; bestIdx = i; }
+      });
+      pick = { face: faces[bestIdx], sim: null };
+    }
+
+    if (pick) {
+      const c = toLayerCoords(pick.face);
+      const cx = (c.eyeL.x + c.eyeR.x) / 2;
+      const cy = (c.eyeL.y + c.eyeR.y) / 2;
+      const dx = c.eyeR.x - c.eyeL.x;
+      const dy = c.eyeR.y - c.eyeL.y;
+      const ipd = Math.hypot(dx, dy);   // inter-pupillary distance px
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      const scale = (selectedMask === 'glasses') ? ipd / 100 : ipd / 50;
+
+      maskEl.style.left = cx + 'px';
+      maskEl.style.top  = cy + 'px';
+      maskEl.style.transform =
+        `translate(-50%, -50%) translateY(${-ipd * 0.15}px) rotate(${angle}deg) scale(${scale})`;
+      maskEl.style.opacity = '1';
+    } else {
+      maskEl.style.opacity = '0';
+    }
+
+    const tags = [
+      `faces: ${faces.length}`,
+      `${lastDetectMs.toFixed(0)} ms`,
+      `${fps} fps`,
+    ];
+    if (refEmbedding) tags.push(pick && pick.sim != null
+      ? `id: ${pick.sim.toFixed(2)}${pick.sim > 0.3 ? ' ✓' : ''}`
+      : 'no match');
+    setHUD(tags);
+
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+// ---- buttons
+btnStart.onclick = async () => {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' },
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    btnStart.disabled = true;
+    btnLock.disabled  = false;
+    btnStop.style.display = '';
+    btnStop.disabled = false;
+    setStatus(`camera on (${video.videoWidth}x${video.videoHeight})`, 'ready');
+    startLoop();
+  } catch (e) {
+    setStatus('camera error: ' + e.message, 'error');
+  }
+};
+
+btnLock.onclick = () => {
+  const r = sdk.captureReference(video);
+  if (!r) { setStatus('no face — try better lighting', 'error'); return; }
+  refEmbedding = r.embedding;
+  btnLock.style.display = 'none';
+  btnUnlock.style.display = '';
+  btnUnlock.disabled = false;
+  setStatus('locked to your face — mask now follows only YOU', 'ready');
+};
+btnUnlock.onclick = () => {
+  refEmbedding = null;
+  btnLock.style.display = '';
+  btnLock.disabled = false;
+  btnUnlock.style.display = 'none';
+  setStatus('unlocked — mask follows any face', 'ready');
+};
+btnStop.onclick = () => {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  video.srcObject = null;
+  maskEl.style.opacity = '0';
+  setHUD([]);
+  btnStart.disabled = false;
+  btnLock.disabled = true;
+  btnUnlock.disabled = true;
+  btnStop.style.display = 'none';
+  setStatus('camera stopped', 'ready');
+};
+
+// ---- bootstrap
+(async () => {
+  try {
+    sdk = new FaceXSDK({
+      detSize: 160,
+      threshold: 0.3,
+      onProgress: (m) => setStatus(m, 'loading'),
+    });
+    await sdk.load();
+    setStatus('SDK ready — press “Start camera”', 'ready');
+    btnStart.disabled = false;
+  } catch (e) {
+    setStatus('SDK load failed: ' + e.message, 'error');
+  }
+})();
+</script>
+</body>
+</html>

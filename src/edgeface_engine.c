@@ -1062,13 +1062,9 @@ static int engine_init(const char* weights_path, Weights* weights) {
             }
 
             int pw_size = packed_weights_size_4x8c8(K, N);
-            void* packed = NULL;
-            int32_t* col_sums = NULL;
-            if (pw_size > 0) {
-                packed = malloc(pw_size);
-                col_sums = (int32_t*)calloc(((N+7)&~7), sizeof(int32_t));
-                pack_weights_4x8c8(w_int8, NULL, K, N, packed, col_sums);
-            }
+            void* packed = malloc(pw_size);
+            int32_t* col_sums = (int32_t*)calloc(((N+7)&~7), sizeof(int32_t));
+            pack_weights_4x8c8(w_int8, NULL, K, N, packed, col_sums);
 
             weights->mm[idx].packed = packed;
             weights->mm[idx].col_sums = col_sums;

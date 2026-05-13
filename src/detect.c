@@ -73,7 +73,6 @@ Detect* detect_init(const char* weights_path) {
         det->tensors[i] = (float*)(det->raw + off); off += sz;
     }
 
-    /* Initial work buffer — will be grown in detect_run if needed */
     det->work_size = 4 * 1024 * 1024;
     det->work = (float*)calloc(det->work_size, sizeof(float));
     if (!det->work) { free(det->raw); free(det); return NULL; }
@@ -237,16 +236,6 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
 
     int H = height, W = width;
     int h2=H/2, w2=W/2, h4=h2/2, w4=w2/2, h8=h4/2, w8=w4/2, h16=h8/2, w16=w8/2, h32=h16/2, w32=w16/2;
-
-    /* Calculate required workspace */
-    size_t need = (size_t)3*H*W + 3*(size_t)64*h2*w2 + (size_t)64*h8*w8
-                + (size_t)64*h16*w16 + (size_t)64*h32*w32 + (size_t)16*h8*w8 + 4096;
-    if (need > det->work_size) {
-        free(det->work);
-        det->work_size = need;
-        det->work = (float*)calloc(det->work_size, sizeof(float));
-        if (!det->work) return -1;
-    }
 
     /* Workspace layout: dedicated buffers */
     float* wp = det->work;
