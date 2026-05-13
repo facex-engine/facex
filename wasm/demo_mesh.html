@@ -199,7 +199,7 @@
     <span class="chip ours">✦ ours <span class="num">1.1MB</span> <span class="src">98pt landmarks</span></span>
     <span class="chip ours">✦ ours <span class="num">5.6MB</span> <span class="src">478pt 3D mesh</span></span>
     <span class="chip ours">✦ ours <span class="num">1.8MB</span> <span class="src">recognition</span></span>
-    <span class="chip ours">✦ ours <span class="num">187KB</span> <span class="src">tongue</span></span>
+    <span class="chip ours">✦ ours <span class="num">187KB</span> <span class="src">smile</span></span>
     <span class="chip apache">Apache <span class="num">3.4MB</span> <span class="src">anti-spoof</span></span>
   </div>
 
@@ -266,7 +266,7 @@ const btnUnlock = $('btnUnlock');
 const btnSnap = $('btnSnap');
 const btnStop = $('btnStop');
 
-let detSess = null, lmSess = null, recSess = null, lm3dSess = null, spoof27Sess = null, spoof40Sess = null, tongueSess = null, meshTopology = null, stream = null, running = false;
+let detSess = null, lmSess = null, recSess = null, lm3dSess = null, spoof27Sess = null, spoof40Sess = null, smileSess = null, meshTopology = null, stream = null, running = false;
 let mode = 'hybrid';
 let last3D = [];     // per-face 478 [x,y,z] from true-3D model (overlay coords)
 let lastHybrid = []; // per-face 478 [x,y,z] from hybrid (WFLW->MP via TPS)
@@ -280,10 +280,10 @@ let lastSim = null;      // most recent cosine similarity to ref
 let lastPts2d = null, lastBox = null, lastFaceCount = 0;
 let lastLive = null, lastSpoof = null;  // P(live), P(spoof) from antispoof model
 let spoofMs = 0;
-let lastTongueProb = 0;                 // EMA-smoothed P(tongue out) from tongue classifier
-const TONGUE_EMA = 0.6;
-const TONGUE_THRESH = 0.6;              // tuned for the F1=0.96 model
-let tongueMs = 0;
+let lastSmileProb = 0;                  // EMA-smoothed P(smile)
+const SMILE_EMA = 0.6;
+const SMILE_THRESH = 0.6;
+let smileMs = 0;
 
 // Eye-blink detection (EAR — Eye Aspect Ratio) from our 98-pt WFLW landmarks.
 // WFLW eye indices: left eye 60..67 (8 pts), right eye 68..75 (8 pts).
@@ -461,7 +461,7 @@ async function loadModels() {
     ['minifasnet_v2_27.enc',    'spoof27'],
     ['minifasnet_v1se_40.enc',  'spoof40'],
     ['facex_3d_landmarks.enc',  'lm3d'],
-    ['facex_tongue.enc',        'tongue'],
+    ['facex_smile.enc',         'smile'],
   ];
   const setSess = (name, s) => {
     if (name === 'det') detSess = s;
@@ -470,7 +470,7 @@ async function loadModels() {
     else if (name === 'spoof27') spoof27Sess = s;
     else if (name === 'spoof40') spoof40Sess = s;
     else if (name === 'lm3d') lm3dSess = s;
-    else if (name === 'tongue') tongueSess = s;
+    else if (name === 'smile') smileSess = s;
   };
 
   for (let i = 0; i < steps.length; i++) {
@@ -856,11 +856,10 @@ function fillSpoofTensor(box, scale, dst) {
   }
 }
 
-// Tongue-out classifier. 112×112 RGB normalized [-1, 1], 2-class softmax.
-// Reuses lmCv canvas since it's 112×112 already. Index 1 = tongue.
-const tongueInput = new Float32Array(3 * 112 * 112);
-async function predictTongue(box) {
-  if (!tongueSess) return 0;
+// Smile classifier — same shape/preprocessing as recognition.
+const smileInput = new Float32Array(3 * 112 * 112);
+async function predictSmile(box) {
+  if (!smileSess) return 0;
   const bw = box.x2 - box.x1, bh = box.y2 - box.y1;
   const side = Math.max(bw, bh) * (1 + 2 * 0.15);
   const cx = (box.x1 + box.x2) / 2, cy = (box.y1 + box.y2) / 2;
@@ -872,13 +871,13 @@ async function predictTongue(box) {
   const N = 112 * 112;
   for (let i = 0, p = 0; i < N; i++) {
     const r = img[p++], g = img[p++], b = img[p++]; p++;
-    tongueInput[i]         = (r - 127.5) / 128;
-    tongueInput[N + i]     = (g - 127.5) / 128;
-    tongueInput[2 * N + i] = (b - 127.5) / 128;
+    smileInput[i]         = (r - 127.5) / 128;
+    smileInput[N + i]     = (g - 127.5) / 128;
+    smileInput[2 * N + i] = (b - 127.5) / 128;
   }
-  const t = new ort.Tensor('float32', tongueInput, [1, 3, 112, 112]);
-  const o = await tongueSess.run({ input: t });
-  return o['prob'].data[1];   // P(tongue out)
+  const t = new ort.Tensor('float32', smileInput, [1, 3, 112, 112]);
+  const o = await smileSess.run({ input: t });
+  return o['prob'].data[1];
 }
 
 async function predictSpoof(box) {
@@ -1620,7 +1619,7 @@ function drawHybrid(pts3d, matchFlag) {
   // lip (MP idx 13) and lower inner lip (idx 14), normalized by horizontal
   // mouth width (78 ↔ 308). If the ratio is high → user is sticking the
   // tongue out (or yawning) → dye the LIPS group red for visual feedback.
-  const tongueOut = (lastTongueProb > TONGUE_THRESH);
+  const smiling = (lastSmileProb > SMILE_THRESH);
 
   for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
   for (const grp of [meshTopology.FACE_OVAL,
@@ -1630,9 +1629,9 @@ function drawHybrid(pts3d, matchFlag) {
     for (const [a, b] of grp) shadedEdge(a, b, 1.0);
   }
   // LIPS — red when mouth wide open (tongue likely visible)
-  if (tongueOut) {
+  if (smiling) {
     const sR = baseR, sG = baseG, sB = baseB;
-    baseR = 255; baseG = 40; baseB = 70;
+    baseR = 251; baseG = 191; baseB = 36;        // warm amber for smile
     for (const [a, b] of meshTopology.LIPS) shadedEdge(a, b, 1.6);
     baseR = sR; baseG = sG; baseB = sB;
   } else {
@@ -1645,19 +1644,6 @@ function drawHybrid(pts3d, matchFlag) {
   ctx.restore();
 }
 
-// MediaPipe FaceMesh indices: 13 = upper inner lip center,
-// 14 = lower inner lip center, 78 = left inner mouth corner,
-// 308 = right inner mouth corner. Compare vertical opening to horizontal
-// mouth width — high ratio means mouth wide open / tongue out.
-function isMouthWide(pts) {
-  if (!pts || pts.length < 309) return false;
-  const u = pts[13], l = pts[14], lc = pts[78], rc = pts[308];
-  if (!u || !l || !lc || !rc) return false;
-  const mouthH = Math.abs(l[1] - u[1]);
-  const mouthW = Math.abs(rc[0] - lc[0]);
-  if (mouthW < 5) return false;
-  return (mouthH / mouthW) > 0.35;   // threshold tuned for "deliberate open"
-}
 
 // Render the true-3D mesh from 478 predicted (x,y,z) landmarks.
 // Each edge is shaded by the average z of its endpoints (forward = brighter, thicker).
@@ -1706,7 +1692,7 @@ function drawTrue3D(pts3d, matchFlag) {
   }
 
   // (1) Full tessellation — dense mesh
-  const tongueOut = (lastTongueProb > TONGUE_THRESH);
+  const smiling = (lastSmileProb > SMILE_THRESH);
 
   for (const [a, b] of meshTopology.TESSELATION) shadedEdge(a, b, 0.75);
 
@@ -1717,9 +1703,9 @@ function drawTrue3D(pts3d, matchFlag) {
                      meshTopology.NOSE]) {
     for (const [a, b] of grp) shadedEdge(a, b, 1.0);
   }
-  if (tongueOut) {
+  if (smiling) {
     const sR = baseR, sG = baseG, sB = baseB;
-    baseR = 255; baseG = 40; baseB = 70;
+    baseR = 251; baseG = 191; baseB = 36;        // warm amber for smile
     for (const [a, b] of meshTopology.LIPS) shadedEdge(a, b, 1.6);
     baseR = sR; baseG = sG; baseB = sB;
   } else {
@@ -1843,7 +1829,7 @@ async function tick() {
       detectMs = performance.now() - t0;
       lastFaceCount = faces.length;
       lastFaces = faces;
-      if (faces.length === 0) { lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = []; lastSim = null; lastLive = null; lastSpoof = null; emaLive = null; lastTongueProb = 0; pulseBuf = []; lastBPM = null; smoothedPts2d = []; busy = false; return; }
+      if (faces.length === 0) { lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = []; lastSim = null; lastLive = null; lastSpoof = null; emaLive = null; lastSmileProb = 0; pulseBuf = []; lastBPM = null; smoothedPts2d = []; busy = false; return; }
       if (faces.length !== smoothedPts2d.length) smoothedPts2d = [];   // reset on face count change
       const t1 = performance.now();
       const all = [];
@@ -1959,11 +1945,11 @@ async function tick() {
           lastLive = emaLive;
           lastSpoof = 1 - emaLive;
           window.__lastRawLive = sp.live;
-          // Tongue-out detection on the same face (also primary only).
-          const t4 = performance.now();
-          const tprob = await predictTongue(f);
-          tongueMs = performance.now() - t4;
-          lastTongueProb = TONGUE_EMA * lastTongueProb + (1 - TONGUE_EMA) * tprob;
+          // Smile detection on the same face (primary only).
+          const t5 = performance.now();
+          const sprob = await predictSmile(f);
+          smileMs = performance.now() - t5;
+          lastSmileProb = SMILE_EMA * lastSmileProb + (1 - SMILE_EMA) * sprob;
         }
       }
       lmMs = (performance.now() - t1) / faces.length;
@@ -2103,7 +2089,7 @@ async function tick() {
     `det ${detectMs.toFixed(0)}ms <span style="color:#34d399">(nn2 ≈${(detectMs/1.5).toFixed(0)})</span>`,
     `lm ${lmMs.toFixed(0)}ms`,
     `spoof ${spoofMs.toFixed(0)}ms <span style="color:#34d399">(nn2 ≈${(spoofMs/2).toFixed(0)})</span>`,
-    `tongue ${tongueMs.toFixed(0)}ms`,
+    `smile ${smileMs.toFixed(0)}ms`,
     `${fps} fps`,
   ];
   if (lastBPM != null) {
@@ -2124,8 +2110,8 @@ async function tick() {
     const color = isLive ? '#10b981' : '#ef4444';
     tags.push(`<span style="color:${color}">${label}</span>`);
   }
-  if (lastTongueProb > TONGUE_THRESH && lastFaceCount > 0) {
-    tags.push(`<span style="color:#ef4444">👅 TONGUE ${(lastTongueProb*100).toFixed(0)}%</span>`);
+  if (lastSmileProb > SMILE_THRESH && lastFaceCount > 0) {
+    tags.push(`<span style="color:#fbbf24">😀 SMILE ${(lastSmileProb*100).toFixed(0)}%</span>`);
   }
   if (performance.now() < blinkFlashUntil) {
     tags.push(`<span style="color:#60a5fa">👁 BLINK</span>`);
