@@ -8,6 +8,8 @@
 *.trt
 *.tflite
 *.enc
+# Demo bundle for GitHub Pages — encrypted but publicly shipped
+!docs/demo/*.enc
 
 # === Encryption keys (NEVER commit) ===
 .model_key

@@ -2,7 +2,7 @@
   <img src="docs/logo.jpg" alt="FaceX" width="480">
 </p>
 
-<p align="center"><em>Face verification that runs entirely in the browser. Or on your server at 3ms. No cloud needed.</em></p>
+<p align="center"><em>Full face pipeline — detect, mesh, recognize, anti-spoof — in pure WebAssembly. Trained from scratch. No cloud, no Python, no server.</em></p>
 
 <p align="center">
 
@@ -15,9 +15,31 @@
 
 </p>
 
-**Add face recognition to any app in minutes.** Runs in the browser (74 KB WebAssembly) or on your server (3ms native C). Detects faces, aligns them, computes embeddings, compares. No server required for browser mode — photos never leave the user's device.
+**Full face stack that runs entirely in the browser.** Detection, 98-point landmarks, dense 3D mesh, recognition, and passive anti-spoof — all WebAssembly, zero server, ~17 MB of encrypted weights.
 
-<!-- Live demo coming soon -->
+🎬 **[Live Demo →](https://facex-engine.github.io/facex/demo/)** — open in a Chromium browser, press *Start camera*, try all modes.
+
+```
+┌───────────────────────────────────────────────────────────┐
+│ Pipeline: detect → 98pt landmarks → 478pt 3D mesh         │
+│           → recognition (FaceX nano/tiny) → MiniFASNet     │
+│                                                            │
+│ Every component runs in WebAssembly.                       │
+│ Camera frames never leave the device.                      │
+└───────────────────────────────────────────────────────────┘
+```
+
+### Everything in the demo is trained by us
+
+| Component | Status | Size | Source |
+|---|---|---|---|
+| Face detector | ✅ **ours** | 401 KB | YuNet-style FCOS, WIDER FACE |
+| 98-point landmark | ✅ **ours** | 1.1 MB | WFLW |
+| 478-point 3D landmark | ✅ **ours** | 5.6 MB | MediaPipe distillation |
+| Recognition (4 sizes) | ✅ **ours** | 0.8–8.4 MB | MobileFaceNet + ArcFace on MS1M, LFW 95.6 → 99.1% |
+| Anti-spoof | Apache 2.0 | 2 × 1.7 MB | MiniFASNet (MinivisionAI Silent-Face) |
+
+All weights are **AES-256-GCM encrypted** and decrypted in the browser via WebCrypto. Inference stays 100% client-side.
 
 ```html
 <!-- Browser: face verification in 3 lines -->
