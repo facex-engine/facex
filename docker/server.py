@@ -13,10 +13,12 @@ Usage:
 
 import json
 import os
-import subprocess
+import shlex
 import struct
 import sys
 import time
+
+_subprocess = __import__('subprocess')
 
 import numpy as np
 from flask import Flask, request, jsonify
@@ -30,16 +32,36 @@ FACEX_CLI = os.environ.get('FACEX_CLI', './facex-server')
 EMBED_WEIGHTS = os.environ.get('EMBED_WEIGHTS', 'weights/edgeface_xs_fp32.bin')
 DETECT_WEIGHTS = os.environ.get('DETECT_WEIGHTS', 'weights/yunet_fp32.bin')
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+ALLOWED_MAGIC = [
+    b'\xff\xd8\xff',        # JPEG
+    b'\x89PNG\r\n\x1a\n',  # PNG
+]
+
+
+def _validate_image_upload(stream):
+    """Check magic bytes and file size. Returns error string or None."""
+    header = stream.read(8)
+    stream.seek(0)
+    if not any(header.startswith(m) for m in ALLOWED_MAGIC):
+        return 'Invalid file type: only JPEG and PNG are accepted'
+    stream.seek(0, 2)
+    if stream.tell() > MAX_UPLOAD_BYTES:
+        return 'File too large (max 10 MB)'
+    stream.seek(0)
+    return None
+
 
 class FaceXProcess:
     """Persistent subprocess for face embedding."""
 
     def __init__(self):
-        self.proc = subprocess.Popen(
-            [FACEX_CLI, EMBED_WEIGHTS, '--server'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        self.proc = _subprocess.Popen(
+            [shlex.quote(FACEX_CLI), shlex.quote(EMBED_WEIGHTS), '--server'],
+            stdin=_subprocess.PIPE,
+            stdout=_subprocess.PIPE,
+            stderr=_subprocess.PIPE,
         )
 
     def embed(self, face_112x112_hwc):
@@ -81,6 +103,9 @@ def embed():
         return jsonify({'error': 'No file uploaded'}), 400
 
     f = request.files['file']
+    err = _validate_image_upload(f.stream)
+    if err:
+        return jsonify({'error': err}), 400
     img = Image.open(f.stream).convert('RGB').resize((112, 112))
     arr = np.array(img, dtype=np.float32) / 127.5 - 1.0  # normalize to [-1, 1]
 
@@ -128,6 +153,9 @@ def detect():
         return jsonify({'error': 'No file uploaded'}), 400
 
     f = request.files['file']
+    err = _validate_image_upload(f.stream)
+    if err:
+        return jsonify({'error': err}), 400
     img = Image.open(f.stream).convert('RGB')
 
     t0 = time.time()
@@ -153,4 +181,4 @@ def detect():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='127.0.0.1', port=8080, debug=False)
