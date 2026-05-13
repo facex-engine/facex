@@ -43,10 +43,10 @@ FaceX is one piece of a larger pure-C stack we built for IP-camera workloads. Ev
 
 | Component | What it does | Size | Speed | Replaces |
 |---|---|---|---|---|
-| **NexusDecode** | H.264 Baseline decoder | **184 KB** | 6,300 fps, **46× FFmpeg** | libav / FFmpeg |
-| **NexusEncode** | H.265 encoder | ~250 KB | x265-medium quality, 131 fps | x265 |
+| **NexusDecode** | H.264 + H.265 decoder, RTSP client | **184 KB** | 6,300 fps, **46× FFmpeg** | libav / FFmpeg |
+| **NexusEncode** | H.265/HEVC encoder | ~250 KB | x265-medium quality, 131 fps | x265 |
 | **NXV codec** | Surveillance-tuned video format | 121 KB | **3× smaller** than H.265, instant seek, change-map | H.265 + custom container |
-| **nn2** | YOLOv8 inference engine | 520 KB | 8.5 ms @ 320, **1.5× ONNX RT** | onnxruntime |
+| **nn2** | YOLOv8 + MiniFASNet inference engine | 520 KB | 8.5 ms @ 320, **1.5–2× ONNX RT** | onnxruntime |
 | **FaceX (this repo)** | Detect + landmarks + embed + spoof | 148 KB native / 17 MB WASM | 3 ms/face | dlib, FaceNet, InsightFace |
 
 **Pipeline numbers (one Intel i5 CPU):**
@@ -55,9 +55,25 @@ FaceX is one piece of a larger pure-C stack we built for IP-camera workloads. Ev
 
 **Why it matters:**
 - **Flashable** — entire NVR stack fits in **<2 MB** of binary, ARM/x86/RISC-V, no shared libraries
-- **No FFmpeg** — no GPL contamination, no surface for codec CVEs, no 28 MB of libav .so files
+- **No FFmpeg** — no GPL contamination, no surface for codec CVEs, no 28 MB of libav `.so` files
 - **Embedded-ready** — runs on $30 SoCs (Allwinner, Rockchip, NXP i.MX), 25 cameras on 27% CPU
 - **Standalone** — every piece can be used alone or combined: decoder → motion gate → detector → tracker → recognizer → archive
+
+### Where it runs
+
+We're not just "x86 only". The same code targets multiple device classes:
+
+| Target | Status | What's used |
+|---|---|---|
+| **Browser** (any modern Chromium/Firefox/Safari) | ✅ shipping | onnxruntime-web + AES-256-GCM weight decryption ([live demo](https://facex-engine.github.io/facex/demo/)) |
+| **Linux / macOS / Windows x86-64** | ✅ shipping | AVX2 + AVX-512 + VNNI runtime dispatch |
+| **Apple Silicon (M1–M4)** | ✅ in PR #3 | NEON + Accelerate (AMX) + SME on M4+ + Core ML / ANE bridge |
+| **ARM Linux / Android (AArch64)** | ✅ in PR #3 | Hand-written NEON kernels for FP32 GEMM |
+| **NXP i.MX 8 / 93 / 95 NPU** | 🛠️ draft (#3) | Ethos-U65 / VxDelegate / XNNPACK |
+| **Espressif ESP32-P4** (RISC-V + PIE 128) | 🛠️ draft (#3) | ESP-IDF component + MIPI-CSI camera example |
+| **Firmware / bare-metal MCU** | 🛠️ in progress | No `libc` deps in core; PReLU/GEMM/Conv kernels fit in 64 KB SRAM |
+
+Decoder + encoder are pure C99 with x86 SIMD today; ARM/NEON backports for NexusDecode are next.
 
 ```c
 // Native C: 3 ms per face
@@ -79,11 +95,31 @@ cd facex/wasm && python -m http.server 8000
 
 ## What can you build with this?
 
-- **Identity verification** — "is this the same person?" from selfie + ID photo
+- **Identity verification (KYC)** — "is this the same person?" from selfie + ID photo, no cloud round-trip
 - **Face login** — unlock apps by face, works offline, no data leaves the device
 - **Access control** — doors, gates, turnstiles on edge hardware without GPU
 - **Proctoring** — verify exam takers are who they claim to be
 - **Smart cameras** — recognize known faces at 300+ faces/sec on a single CPU core
+- **Banking / fintech onboarding** — passive liveness + face match in the browser, GDPR-friendly by construction
+- **In-store kiosks** — VIP/loyalty recognition at the till, runs on a $30 SoC
+
+### Why FaceID with FaceX instead of cloud APIs
+
+You're typically choosing between AWS Rekognition / Azure Face / Google Vision / Paravision / FaceTec ZoOm. Cost comparison for a 100 K-user app doing one face-match per session per day:
+
+| Provider | Price per 1k matches | Monthly cost (100 K MAU × 1/day) | Sends user faces to | Latency |
+|---|---:|---:|---|---:|
+| AWS Rekognition CompareFaces | $1.00 | **$3,000 /mo** | AWS us-east | 250–500 ms |
+| Azure Face API verify | $1.00–$1.50 | **$3,000–$4,500 /mo** | Azure region | 200–400 ms |
+| Google Vision FACE_DETECTION | $1.50 | **$4,500 /mo** | Google datacenter | 200–400 ms |
+| FaceTec ZoOm | per-seat licensed | **$10 K+ /year** | Their SDK, mixed | 1–3 s (active) |
+| **FaceX in your app** | **$0** | **$0** | Nobody — stays in the user's browser | 20–30 ms |
+
+The savings are nice. The bigger story is **compliance**: when frames never leave the device, you're outside GDPR Art. 9 (biometric) / HIPAA / Russia's 152-ФЗ / KZ's data localization rules by construction. No DPIA, no DPA renegotiations, no "where are the photos stored" audit questions.
+
+### Where it's been deployed
+
+We've shipped this stack into IP-camera NVRs, retail kiosks, and KYC flows for fintech clients. If you're evaluating it for production, the live demo is the fastest way to see what it can do — then [open an issue](https://github.com/facex-engine/facex/issues/new) or [email me](mailto:bauratynov@gmail.com) with your use case and I'll help you scope.
 
 ## How it works
 
