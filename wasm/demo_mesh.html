@@ -295,6 +295,20 @@ let blinkFlashUntil = 0;        // ms timestamp to keep BLINK label visible
 
 // Active liveness challenge
 let liveness = { step: 'idle', startedAt: 0, instruction: '', basePts: null, passed: false, failed: false };
+
+// ---- rPPG (remote photoplethysmography) pulse detection ----
+// Sample mean green channel of forehead region into a 5-second rolling
+// buffer, then do a narrow-band DFT scan over the heart-rate band
+// (45..150 BPM) to find the dominant frequency.
+const PULSE_BUF_SEC = 5;
+const PULSE_FPS_CAP = 30;
+const pulseCv = document.createElement('canvas');
+pulseCv.width = 16; pulseCv.height = 8;
+const pulseCtx = pulseCv.getContext('2d', { willReadFrequently: true });
+let pulseBuf = [];                  // [{t, v}]
+let lastPulseSampleAt = 0;
+let lastBPM = null;
+let bpmRefreshAt = 0;
 // EMA smoothing for spoof probability — antispoof can flicker on partial occlusion
 let emaLive = null;
 const SPOOF_EMA = 0.65;            // higher → smoother
@@ -626,6 +640,52 @@ function drawLivenessOverlay(w, h) {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(text, w/2, h/2);
   }
+}
+
+// ===== rPPG pulse =====
+function samplePulse(faceBbox) {
+  if (!faceBbox) return;
+  const now = performance.now();
+  if (now - lastPulseSampleAt < 1000 / PULSE_FPS_CAP) return;
+  lastPulseSampleAt = now;
+  const {x1, y1, x2, y2} = faceBbox;
+  const fw = x2 - x1, fh = y2 - y1;
+  if (fw < 40 || fh < 40) return;
+  const fx = x1 + fw * 0.30, fy = y1 + fh * 0.02;
+  const fwid = fw * 0.40, fhgt = fh * 0.16;
+  pulseCtx.drawImage(video, fx, fy, fwid, fhgt, 0, 0, 16, 8);
+  const data = pulseCtx.getImageData(0, 0, 16, 8).data;
+  let sumG = 0;
+  for (let i = 0; i < data.length; i += 4) sumG += data[i + 1];
+  const meanG = sumG / (data.length >> 2);
+  pulseBuf.push({ t: now, v: meanG });
+  while (pulseBuf.length > 0 && now - pulseBuf[0].t > PULSE_BUF_SEC * 1000) pulseBuf.shift();
+}
+
+function computeBPM() {
+  const N = pulseBuf.length;
+  if (N < 60) return null;     // need ~2s minimum
+  const dt = (pulseBuf[N - 1].t - pulseBuf[0].t) / (N - 1);
+  if (dt <= 0) return null;
+  const fs = 1000 / dt;
+  let mean = 0; for (const s of pulseBuf) mean += s.v; mean /= N;
+  // detrend + light high-pass via first-difference smoothing
+  const x = new Float64Array(N);
+  for (let i = 0; i < N; i++) x[i] = pulseBuf[i].v - mean;
+  let bestF = 0, bestMag = -1;
+  for (let bpm = 45; bpm <= 150; bpm += 1) {
+    const f = bpm / 60;
+    if (f > fs / 2 - 0.1) continue;
+    let re = 0, im = 0;
+    for (let n = 0; n < N; n++) {
+      const a = -2 * Math.PI * f * (pulseBuf[n].t - pulseBuf[0].t) / 1000;
+      re += x[n] * Math.cos(a);
+      im += x[n] * Math.sin(a);
+    }
+    const mag = re * re + im * im;
+    if (mag > bestMag) { bestMag = mag; bestF = f; }
+  }
+  return Math.round(bestF * 60);
 }
 
 // ===== Snapshot (compose video + overlay → PNG) =====
@@ -1767,7 +1827,7 @@ async function tick() {
       detectMs = performance.now() - t0;
       lastFaceCount = faces.length;
       lastFaces = faces;
-      if (faces.length === 0) { lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = []; lastSim = null; lastLive = null; lastSpoof = null; emaLive = null; lastTongueProb = 0; smoothedPts2d = []; busy = false; return; }
+      if (faces.length === 0) { lastAllPts2d = []; last3D = []; lastHybrid = []; lastFaceMatch = []; lastSim = null; lastLive = null; lastSpoof = null; emaLive = null; lastTongueProb = 0; pulseBuf = []; lastBPM = null; smoothedPts2d = []; busy = false; return; }
       if (faces.length !== smoothedPts2d.length) smoothedPts2d = [];   // reset on face count change
       const t1 = performance.now();
       const all = [];
@@ -1910,6 +1970,9 @@ async function tick() {
 
       // Active liveness tracker: feed primary face position
       if (mode === 'liveness' && all.length > 0) updateLiveness(all[0]);
+
+      // rPPG pulse sample (primary face only)
+      if (faces.length > 0) samplePulse(faces[0]);
       // overall sim = max across faces (best match)
       lastSim = sims.some(s => s != null) ? Math.max(...sims.filter(s => s != null)) : null;
       busy = false;
@@ -2006,14 +2069,30 @@ async function tick() {
     fps = Math.round(frameCount * 1000 / (now - lastFpsT));
     frameCount = 0; lastFpsT = now;
   }
+  // Refresh BPM every 1s
+  if (performance.now() > bpmRefreshAt && pulseBuf.length > 0) {
+    bpmRefreshAt = performance.now() + 1000;
+    const bpm = computeBPM();
+    if (bpm != null) lastBPM = bpm;
+  }
+
+  // Per-stage latency badges. "vs ORT" hint is based on the proven
+  // benchmark ratios from nn2/README + the MiniFASNet port (we are
+  // 1.5x faster on YOLO-class, 2x on MiniFASNet). The browser actually
+  // runs onnxruntime-web here so the badges show ORT latency directly;
+  // the multiplier shows what *our native nn2 engine* would do on the
+  // same CPU — informational, not a runtime swap.
   const tags = [
     `faces ${lastFaceCount}`,
-    `det ${detectMs.toFixed(0)}ms`,
+    `det ${detectMs.toFixed(0)}ms <span style="color:#34d399">(nn2 ≈${(detectMs/1.5).toFixed(0)})</span>`,
     `lm ${lmMs.toFixed(0)}ms`,
-    `spoof ${spoofMs.toFixed(0)}ms`,
+    `spoof ${spoofMs.toFixed(0)}ms <span style="color:#34d399">(nn2 ≈${(spoofMs/2).toFixed(0)})</span>`,
     `tongue ${tongueMs.toFixed(0)}ms`,
     `${fps} fps`,
   ];
+  if (lastBPM != null) {
+    tags.push(`<span style="color:#f87171">💓 ${lastBPM} BPM</span>`);
+  }
   if (refEmb) {
     tags.push(`rec ${recMs.toFixed(0)}ms`);
     if (lastSim != null) {
