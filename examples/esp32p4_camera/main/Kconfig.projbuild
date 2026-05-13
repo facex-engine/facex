@@ -1,0 +1,57 @@
+menu "Camera example"
+
+    config CAM_HRES
+        int "Sensor horizontal resolution"
+        default 800
+        help
+            Native sensor output width. SC2336 default is 1280x720;
+            we use 800x640 to keep DRAM frame budget under 1 MB at
+            RGB565. Override for your sensor.
+
+    config CAM_VRES
+        int "Sensor vertical resolution"
+        default 640
+
+    config CAM_LANE_BIT_RATE_MBPS
+        int "MIPI CSI lane bit rate (Mbps)"
+        default 200
+        range 80 1500
+        help
+            Per-lane bit rate negotiated with the sensor. Must match
+            the sensor's clock-tree configuration. SC2336 800x640 at
+            30 fps fits in 200 Mbps × 2 lanes.
+
+    config CAM_DATA_LANES
+        int "Number of MIPI CSI data lanes"
+        default 2
+        range 1 2
+
+    config SCCB_PORT
+        int "I2C port for SCCB sensor control"
+        default 0
+
+    config SCCB_SCL_GPIO
+        int "I2C SCL GPIO"
+        default 8
+
+    config SCCB_SDA_GPIO
+        int "I2C SDA GPIO"
+        default 7
+
+    config SENSOR_RESET_GPIO
+        int "Sensor reset GPIO (-1 if unused)"
+        default -1
+
+    config SENSOR_PWDN_GPIO
+        int "Sensor power-down GPIO (-1 if unused)"
+        default -1
+
+    config CAM_FRAME_QUEUE_LEN
+        int "CSI frame queue depth"
+        default 2
+        range 1 8
+        help
+            Number of frame buffers in flight. 2 is enough for
+            single-consumer pipelines (capture → process → free).
+
+endmenu

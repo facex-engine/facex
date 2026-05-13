@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     printf("FaceX %s\n", facex_version());
 
     /* Initialize engine */
-    FaceX* fx = facex_init(weights, NULL);
+    FaceX* fx = facex_init(weights, NULL, NULL);
     if (!fx) {
         fprintf(stderr, "Failed to load weights: %s\n", weights);
         return 1;

@@ -7,6 +7,16 @@
 *.so
 *.dylib
 
+# Built executables (Makefile output)
+facex-cli
+facex-example
+facex-encrypt
+facex-mac-test
+facex-bench
+facex-camera-bench
+golden-test
+imx_npu_compile_test
+
 # Local toolchains and datasets — NOT committed
 emsdk/
 lfw/
@@ -16,3 +26,6 @@ weights/golden/
 *.npz
 gmon.out
 __pycache__/
+
+# Claude Code session artefacts
+.claude/

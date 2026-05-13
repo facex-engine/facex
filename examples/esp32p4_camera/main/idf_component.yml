@@ -1,0 +1,6 @@
+# Pulls in Espressif's camera-sensor framework so SC2336 / OV5645 / etc.
+# come pre-bundled. Versions track ESP-IDF v5.4 / v5.5 stable.
+dependencies:
+  espressif/esp_cam_sensor: "^1.0.0"
+  espressif/esp_video: "^0.6.1"
+  idf: ">=5.4.0"

@@ -1,0 +1,57 @@
+menu "FaceX"
+
+    choice FACEX_BACKEND
+        prompt "Inference backend"
+        default FACEX_BACKEND_STUB
+        help
+            Selects which face-detection / embedding implementation
+            facex_esp_detect() dispatches to.
+
+        config FACEX_BACKEND_STUB
+            bool "Stub (synthetic faces, ~0 KB)"
+            help
+                Returns a single synthetic face per frame. Use this to
+                wire up the camera + display + UI without committing
+                to a real model — useful for board bring-up.
+
+        config FACEX_BACKEND_NATIVE
+            bool "Native FaceX engine (EdgeFace-XS, EXPERIMENTAL)"
+            help
+                Pulls in the full src/edgeface_engine.c. The model
+                weights (~7 MB FP32 / ~1.8 MB INT8) require PSRAM and
+                will be SLOW on a 360 MHz P4 — multi-second per frame.
+                Intended for evaluation, NOT for shipping. The
+                production-ready path is FACEX_BACKEND_ESPNN +
+                EdgeFace-Nano — see docs/esp32p4.md.
+
+        config FACEX_BACKEND_ESPNN
+            bool "ESP-NN backend (EdgeFace-Nano, NOT IMPLEMENTED)"
+            depends on 0   # gated until distilled model + esp-nn backend land
+            help
+                Reserved. Will dispatch convolutions through Espressif's
+                esp-nn (PIE-SIMD INT8) library running a distilled
+                ~300 K-param EdgeFace-Nano model. Tracks plan sprint C5.
+    endchoice
+
+    config FACEX_DETECT_INPUT_W
+        int "Detector input width"
+        default 96
+        range 32 320
+        help
+            Input image width passed to facex_esp_detect(). Camera
+            frames are downscaled to this size before inference.
+            Smaller = faster, larger = better recall on small faces.
+
+    config FACEX_DETECT_INPUT_H
+        int "Detector input height"
+        default 96
+        range 32 320
+
+    config FACEX_LOG_PER_FRAME
+        bool "Log per-frame detection result"
+        default n
+        help
+            If enabled, every processed frame logs its bbox + score
+            via ESP_LOGI. Spammy at 30 FPS — use for bring-up only.
+
+endmenu

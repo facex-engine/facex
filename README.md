@@ -175,7 +175,22 @@ make example    # builds and runs example
 make encrypt    # builds weight encryption tool
 ```
 
-Requirements: GCC with AVX2 support. Nothing else.
+Requirements: GCC with AVX2 support, **or** clang on Apple Silicon / AArch64
+Linux (NEON kernels are auto-selected). Nothing else.
+
+### macOS / Apple Silicon
+
+The Mac build auto-detects `arm64` and uses hand-written NEON kernels
+(~5 ms per embed on M2). A Swift camera benchmark is included:
+
+```bash
+make mac-test                # smoke test
+make bench-camera            # build the AVFoundation camera bench
+./facex-camera-bench --frames 200
+```
+
+See [`docs/mac.md`](docs/mac.md) for the full Mac guide (build modes,
+permissions, troubleshooting, performance reference).
 
 ### Cross-compile for Linux (from WSL)
 

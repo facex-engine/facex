@@ -982,7 +982,11 @@ static int engine_init(const char* weights_path, Weights* weights) {
     weights->fp = (PackedFP32*)calloc(weights->n_tensors, sizeof(PackedFP32));
 
 
-    /* Pre-pack MatMul weights to INT8 c8 format */
+    /* Pre-pack MatMul weights to INT8 c8 format.
+     * Disabled when FACEX_NO_INT8 is defined (e.g. ARM64 build) — engine then
+     * uses the FP32 packed path exclusively. mm[idx].packed stays NULL so the
+     * matmul dispatch falls through to matmul_fp32_packed. */
+#ifndef FACEX_NO_INT8
     {
         extern void pack_weights_4x8c8(const int8_t*, const float*, int, int, void*, int32_t*);
         extern int packed_weights_size_4x8c8(int, int);
@@ -1080,6 +1084,7 @@ static int engine_init(const char* weights_path, Weights* weights) {
             free(w_int8);
         }
     }
+#endif /* !FACEX_NO_INT8 */
 
     /* Pre-pack FP32 MatMul weights into column-panel format [ceil(N/8), K, 8] */
     {

@@ -1,0 +1,27 @@
+# Defaults for the ESP32-P4 MIPI-CSI + FaceX example.
+# Override with `idf.py menuconfig` per board / sensor.
+
+CONFIG_IDF_TARGET="esp32p4"
+
+# CSI PHY needs 2.5 V; the official Function-EV-Board routes the internal
+# LDO. The example code calls esp_ldo_acquire_channel() before init.
+CONFIG_ESP_LDO_RESERVE_PSRAM=n
+
+# PSRAM (octal, 200 MHz on P4-Function-EV) — frame buffers go here.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# Stack: the camera task does 320x240 BGR888->RGB downscale on a 2 KB stack
+# floor, but FaceX dispatch eats more. Bump to 8 KB.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# CPU at full speed — the MIPI clock budget assumes 360 MHz.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=360
+
+# Logs — INFO is enough for normal use; per-frame dumps are noisy.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
