@@ -19,15 +19,9 @@
 
 🎬 **[Live Demo →](https://facex-engine.github.io/facex/demo/)** — open in a Chromium browser, press *Start camera*, try all modes.
 
-```
-┌───────────────────────────────────────────────────────────┐
-│ Pipeline: detect → 98pt landmarks → 576pt 3D mesh         │
-│           → recognition (FaceX nano/tiny) → MiniFASNet     │
-│                                                            │
-│ Every component runs in WebAssembly.                       │
-│ Camera frames never leave the device.                      │
-└───────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/pipeline.jpg" alt="FaceX pipeline" width="720">
+</p>
 
 ### Everything in the demo is trained by us
 
