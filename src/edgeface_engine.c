@@ -451,7 +451,7 @@ static void xca_block(float* x_hwc, int H, int W, int C,
  * AVX2 optimized: vectorize across output channels (Cout). */
 /* conv2d_hwc with pre-transposed weights in [Cin*KK, Cout] layout.
  * At load time, call conv2d_hwc_reorder_weights() to transpose OIHW → [Cin*KK, Cout]. */
-static void conv2d_hwc_reorder_weights(float* w, int Cout, int Cin, int KK) {
+void conv2d_hwc_reorder_weights(float* w, int Cout, int Cin, int KK) {
     /* In-place transpose from [Cout, Cin*KK] to [Cin*KK, Cout] */
     float* tmp = (float*)malloc((size_t)Cout * Cin * KK * sizeof(float));
     memcpy(tmp, w, (size_t)Cout * Cin * KK * sizeof(float));
