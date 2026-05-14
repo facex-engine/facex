@@ -31,10 +31,10 @@
 | Face detector | ✅ **ours** | 401 KB | YuNet-style FCOS, WIDER FACE |
 | 98-point landmark | ✅ **ours** | 1.1 MB | WFLW |
 | 576-point 3D mesh | ✅ **ours** | 5.6 MB | MediaPipe distillation |
-| Recognition (4 sizes) | ✅ **ours** | 0.8–8.4 MB | MobileFaceNet + ArcFace on MS1M, LFW 95.6 → 99.1% |
+| Recognition (4 sizes) | ✅ **ours** | 0.8–8.4 MB | MobileFaceNet + ArcFace on MS1M, LFW 95.62 → 99.07% (10-fold mean) |
 | Anti-spoof | Apache 2.0 | 2 × 1.7 MB | MiniFASNet (MinivisionAI Silent-Face) |
 
-All weights are **AES-256-GCM encrypted** and decrypted in the browser via WebCrypto. Inference stays 100% client-side.
+Weights ship as AES-256-GCM ciphertext and are decrypted in the browser via WebCrypto. This is **not DRM** — a determined attacker can dump the decrypted bytes from the WASM heap. What it does buy you: friction against casual scraping, per-customer key revocation for SaaS deployments, and an audit trail at the key-issuing endpoint. See the [wiki](https://github.com/facex-engine/facex/wiki/Encrypted-Weights) for the threat model and Express / FastAPI integration recipes.
 
 ---
 
@@ -179,12 +179,20 @@ Byte-identical predictions to PyTorch / ONNX on the same input.
 
 ### Accuracy — recognition (LFW verification)
 
-| Variant | Params | LFW | ONNX size | Speed (CPU) |
-|---------|------:|----:|----------:|------------:|
-| nano | 0.20 M | 95.62% | 0.8 MB | 1.4 ms |
-| tiny | 0.45 M | 96.85% | 1.8 MB | 2.1 ms |
-| standard | 0.93 M | 98.25% | 3.9 MB | 2.6 ms |
-| **xs** | 2.07 M | **99.07%** | 8.4 MB | 3.0 ms |
+All numbers are the **mean accuracy across 10-fold cross-validation**
+(InsightFace-style: tune the threshold on 9 training folds, evaluate
+on the 1 held-out fold, repeat 10 times). The `±` column is the
+standard deviation across folds. Input must be 112×112 ArcFace-aligned
+via a 5-point similarity transform — running on un-aligned crops drops
+accuracy by ~25 points. The eval script is
+[training/scripts/lfw_eval.py](training/scripts/lfw_eval.py).
+
+| Variant | Params | LFW mean | ± std | ONNX size | Speed (CPU) |
+|---------|------:|---------:|------:|----------:|------------:|
+| nano | 0.20 M | 95.62% | 1.11% | 0.8 MB | 1.4 ms |
+| tiny | 0.45 M | 96.85% | 0.87% | 1.8 MB | 2.1 ms |
+| standard | 0.93 M | 98.25% | 0.68% | 3.9 MB | 2.6 ms |
+| **xs** | 2.07 M | **99.07%** | 0.40% | 8.4 MB | 3.0 ms |
 
 ### Accuracy — face detection (WIDER FACE val)
 
