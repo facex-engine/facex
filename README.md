@@ -18,6 +18,7 @@
 **Full face stack that runs entirely in the browser.** Detection, 98-point landmarks, dense 3D mesh, recognition, and passive anti-spoof — all WebAssembly, zero server, ~17 MB of encrypted weights.
 
 🎬 **[Live Demo →](https://facex-engine.github.io/facex/demo/)** — open in a Chromium browser, press *Start camera*, try all modes.
+📚 **[Docs in Wiki →](https://github.com/facex-engine/facex/wiki)** — Browser quickstart, training recipes, nn2 architecture, encrypted weights, comparison vs alternatives.
 
 <p align="center">
   <img src="docs/pipeline.jpg" alt="FaceX pipeline" width="720">
