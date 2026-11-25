@@ -22,8 +22,16 @@ With the native library, CLI and mounted weights configured, run from the reposi
 
 ~~~sh
 PYTHONPATH=python:docker python tests/bench_multiface_response.py --batch-workers 4
-PYTHONPATH=python:docker python tests/bench_http_burst.py --wsgi-processes 2
-PYTHONPATH=python:docker python tests/bench_http_burst.py --wsgi-threads
+FACEX_QUEUE_WAIT_MS=0 PYTHONPATH=python:docker python tests/bench_http_burst.py --wsgi-processes 2
+FACEX_QUEUE_WAIT_MS=0 PYTHONPATH=python:docker python tests/bench_http_burst.py --wsgi-threads
 ~~~
 
 For a running Gunicorn instance listening on a Unix socket, pass `--socket /path/to/socket` instead.
+
+## Inference admission deadline
+
+The Flask worker allows 250 ms by default from handler entry to starting inference on `/detect` and `/embed`. Set `FACEX_QUEUE_WAIT_MS` to a different budget in milliseconds, or zero for unlimited local waiting. An admitted inference runs to completion. A busy response is HTTP 503 with `code: inference_busy`. Live-video clients should discard the expired frame and submit a recent frame when ready.
+
+To include time already spent uploading or waiting at a proxy or a synchronous Gunicorn worker, clients can send `X-FaceX-Deadline-Ms` with the absolute Unix time in milliseconds after which processing the frame is no longer useful. This requires synchronized clocks. The earlier deadline applies. The worker checks expiration before accessing the multipart body and again before model execution. Queues outside Flask can still delay delivery of the 503 response.
+
+In a local 64-request burst with 32 clients, one threaded Flask process and eight real JPEGs, unlimited admission returned 64 successful responses with p95 1767 ms. A 250 ms budget admitted 10 (p95 313 ms) and rejected 54 (p95 253 ms). All admitted responses matched their image's sequential result. A subsequent request completed normally. These are WSGI timings for a single burst.

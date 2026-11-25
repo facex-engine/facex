@@ -11,6 +11,7 @@ Usage:
   gunicorn -w 2 -b 0.0.0.0:8080 server:app
 """
 
+from contextlib import contextmanager
 import base64
 import os
 import subprocess
@@ -18,7 +19,7 @@ import threading
 import time
 
 import numpy as np
-from flask import Flask, request, jsonify
+from flask import Flask, g, request, jsonify
 from PIL import Image
 from facex import FaceX
 
@@ -73,6 +74,59 @@ _detector = None
 _detector_lock = threading.Lock()
 
 
+QUEUE_WAIT_MS = int(os.environ.get("FACEX_QUEUE_WAIT_MS", "250"))
+if not 0 <= QUEUE_WAIT_MS <= 86_400_000:
+    raise ValueError("FACEX_QUEUE_WAIT_MS must be between 0 and 86400000")
+
+
+class InferenceBusy(Exception):
+    pass
+
+
+@app.errorhandler(InferenceBusy)
+def inference_busy(_error):
+    return jsonify(error="Inference deadline expired", code="inference_busy"), 503
+
+
+@app.before_request
+def set_inference_deadline():
+    if request.endpoint not in ("detect", "embed") or request.method != "POST":
+        return
+    start = time.monotonic_ns()
+    g.inference_deadline = start + QUEUE_WAIT_MS * 1_000_000 if QUEUE_WAIT_MS else None
+    value = request.headers.get("X-FaceX-Deadline-Ms")
+    if value is not None:
+        if not (1 <= len(value) <= 15 and value.isascii() and value.isdigit()):
+            return jsonify(error="X-FaceX-Deadline-Ms must be a Unix timestamp in milliseconds"), 400
+        remaining = int(value) * 1_000_000 - time.time_ns()
+        if remaining <= 0:
+            raise InferenceBusy()
+        deadline = start + remaining
+        if g.inference_deadline is None or deadline < g.inference_deadline:
+            g.inference_deadline = deadline
+
+
+def check_inference_deadline():
+    if g.inference_deadline is not None and time.monotonic_ns() >= g.inference_deadline:
+        raise InferenceBusy()
+
+
+@contextmanager
+def inference_slot(lock):
+    deadline = g.inference_deadline
+    if deadline is None:
+        lock.acquire()
+    else:
+        remaining = deadline - time.monotonic_ns()
+        if remaining <= 0 or not lock.acquire(timeout=min(remaining / 1e9, threading.TIMEOUT_MAX)):
+            raise InferenceBusy()
+    try:
+        check_inference_deadline()
+        yield
+    finally:
+        lock.release()
+
+
 def initialize_detector():
     """Load weights before forking or under the detector lock in a worker."""
     global _detector
@@ -88,9 +142,10 @@ def initialize_detector():
 def embed_in_worker(arr):
     global _fx
     # The binary protocol has no request IDs. Keep each write and read together.
-    with _embed_lock:
+    with inference_slot(_embed_lock):
         if _fx is None:
             _fx = FaceXProcess()
+        check_inference_deadline()
         try:
             return _fx.embed(arr)
         except OSError:
@@ -179,9 +234,10 @@ def detect():
         return jsonify({'error': 'Invalid image'}), 400
 
     start = time.perf_counter()
-    with _detector_lock:
+    with inference_slot(_detector_lock):
         try:
             initialize_detector()
+            check_inference_deadline()
             faces = _detector.detect(rgb, max_faces=32, embeddings=embeddings)
         except (RuntimeError, OSError):
             app.logger.exception("Face detection failed")
