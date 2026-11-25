@@ -15,6 +15,7 @@
 #include <math.h>
 #include <float.h>
 #include <stdint.h>
+#include <stddef.h>
 
 /* Reference 112×112 landmarks (ArcFace order) */
 static const float REF_KPS[10] = {
@@ -98,16 +99,17 @@ int align_face(const uint8_t* src_rgb, int src_w, int src_h,
             int ix = (int)sx, iy = (int)sy_f;
             float fx = sx - ix, fy = sy_f - iy;
 
+            const uint8_t* pixel = src_rgb + ((size_t)iy * src_w + ix) * 3;
             for (int c = 0; c < 3; c++) {
                 float v = 0;
                 if (ix < src_w-1 && iy < src_h-1) {
-                    float v00 = src_rgb[(iy*src_w + ix)*3 + c];
-                    float v10 = src_rgb[(iy*src_w + ix+1)*3 + c];
-                    float v01 = src_rgb[((iy+1)*src_w + ix)*3 + c];
-                    float v11 = src_rgb[((iy+1)*src_w + ix+1)*3 + c];
+                    float v00 = pixel[c];
+                    float v10 = pixel[3 + c];
+                    float v01 = pixel[(size_t)src_w * 3 + c];
+                    float v11 = pixel[(size_t)src_w * 3 + 3 + c];
                     v = v00*(1-fx)*(1-fy) + v10*fx*(1-fy) + v01*(1-fx)*fy + v11*fx*fy;
                 } else {
-                    v = src_rgb[(iy*src_w + ix)*3 + c];
+                    v = pixel[c];
                 }
                 out_f32[(dy*112 + dx)*3 + c] = v / 127.5f - 1.0f;  /* normalize to [-1, 1] */
             }

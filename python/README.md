@@ -38,6 +38,33 @@ if len(faces) >= 2:
     print(f"Similarity: {sim:.3f}  ({'same' if sim > 0.3 else 'different'} person)")
 ```
 
+## Rectangular YuNet input
+
+For camera frames and photos, initialize the native SDK with the rectangle policy.
+Install the image extra for Pillow and build the shared library from this version.
+
+```python
+fx = FaceX(embed_weights="weights/edgeface_xs_fp32.bin",
+           detect_weights="weights/yunet_fp32.bin",
+           input_policy="rectangle")
+faces = fx.detect(image)
+```
+
+The detector uses up to 409600 input pixels and a default score threshold of 0.58.
+For a 1920 × 1080 source it resizes to 832 × 468 and centers that image on an
+832 × 480 canvas. Boxes and five keypoints use original image coordinates.
+Alignment and embedding sample the original RGB pixels. Set `score_threshold`
+explicitly to override the calibrated threshold. Existing SDK callers use native
+image dimensions by default.
+
+The Docker REST service uses the rectangle policy for `POST /detect` and returns
+up to 32 faces. Mount both weights at the paths above under `/app`, or set
+`EMBED_WEIGHTS` and `DETECT_WEIGHTS` to their paths inside the container.
+
+```sh
+curl -F file=@photo.jpg http://localhost:8080/detect
+```
+
 ## Configuration
 
 ### Auto-detection

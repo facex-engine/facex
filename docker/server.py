@@ -11,17 +11,15 @@ Usage:
   gunicorn -w 2 -b 0.0.0.0:8080 server:app
 """
 
-import json
 import os
 import subprocess
-import struct
-import sys
+import threading
 import time
 
 import numpy as np
 from flask import Flask, request, jsonify
 from PIL import Image
-import io
+from facex import FaceX
 
 app = Flask(__name__)
 
@@ -56,6 +54,8 @@ class FaceXProcess:
 
 # Global process (per worker)
 _fx = None
+_detector = None
+_detector_lock = threading.Lock()
 
 
 def get_fx():
@@ -122,34 +122,34 @@ def detect():
     """Detect faces in image, return bbox + embeddings.
 
     Input: multipart file upload (any size JPEG/PNG)
-    Output: {"faces": [{"bbox": [x1,y1,x2,y2], "score": float, "embedding": [512]}], "ms": float}
+    Output: {"faces": [{"bbox": [x1,y1,x2,y2], "keypoints": [[x,y], ...], "score": float, "embedding": [512]}], "ms": float}
     """
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
-    f = request.files['file']
-    img = Image.open(f.stream).convert('RGB')
+    try:
+        with Image.open(request.files['file'].stream) as uploaded:
+            rgb = np.asarray(uploaded.convert('RGB'))
+    except (OSError, ValueError, Image.DecompressionBombError):
+        return jsonify({'error': 'Invalid image'}), 400
 
-    t0 = time.time()
-
-    # Resize to 160x160 for detection (letterbox)
-    w, h = img.size
-    scale = min(160 / w, 160 / h)
-    nw, nh = int(w * scale), int(h * scale)
-    img_resized = img.resize((nw, nh), Image.BILINEAR)
-    padded = Image.new('RGB', (160, 160), (0, 0, 0))
-    dx, dy = (160 - nw) // 2, (160 - nh) // 2
-    padded.paste(img_resized, (dx, dy))
-
-    # TODO: run C detector via subprocess or ctypes
-    # For now, return placeholder
-    ms = (time.time() - t0) * 1000
-
-    return jsonify({
-        'faces': [],
-        'ms': round(ms, 2),
-        'note': 'Detection via REST API coming soon. Use /embed for pre-aligned faces.',
-    })
+    start = time.perf_counter()
+    global _detector
+    with _detector_lock:
+        try:
+            if _detector is None:
+                engine = FaceX(embed_weights=EMBED_WEIGHTS, detect_weights=DETECT_WEIGHTS,
+                               input_policy="rectangle", license_key=os.environ.get("LICENSE_KEY"))
+                if engine.backend != "ctypes":
+                    raise RuntimeError("Missing native FaceX library")
+                _detector = engine
+            faces = _detector.detect(rgb, max_faces=32)
+        except (RuntimeError, OSError):
+            app.logger.exception("Face detection failed")
+            return jsonify({'error': 'Face detection unavailable'}), 503
+    for face in faces:
+        face['embedding'] = face['embedding'].tolist()
+    return jsonify({'faces': faces, 'ms': round((time.perf_counter() - start) * 1000, 2)})
 
 
 if __name__ == '__main__':

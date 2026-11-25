@@ -61,6 +61,15 @@ FaceX* facex_init(const char* embed_weights, const char* detect_weights, const c
 int facex_detect(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
                  FaceXResult* out, int max_faces);
 
+/* Detect on a prepared RGB canvas and align on the original RGB image.
+ * The resized image occupies resized_w by resized_h pixels, centered with
+ * integer floor padding on its left and top. Results use original coordinates.
+ * The detector returns up to 32 faces per call.
+ */
+int facex_detect_prepared(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
+                          const uint8_t* canvas, int canvas_w, int canvas_h,
+                          int resized_w, int resized_h, FaceXResult* out, int max_faces);
+
 /*
  * Compute embedding only (no detection). Input must be pre-aligned 112×112.
  *   rgb_hwc: 112*112*3 float32 array, HWC layout, values in [-1, 1]

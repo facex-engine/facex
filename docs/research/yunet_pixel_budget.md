@@ -48,3 +48,13 @@ Use the native binary weights exported by tools/export_yunet_weights.py from YuN
 ```sh
 OPENBLAS_NUM_THREADS=1 python tests/bench_yunet_tiles.py yunet.bin WIDER_val.zip wider_face_split.zip
 ```
+
+## Client integration
+
+The Python SDK now exposes the measured policy through `FaceX(input_policy="rectangle")`.
+The REST detection endpoint selects it by default. A run through the SDK on the
+same 640 evaluation images with the REST limit of 32 faces per image produced
+1759 matches, 131 unmatched detections and 990 small matches among 8909 valid
+annotations. The experimental detector above allowed more results on crowded
+frames. The SDK also clips coordinates to the original image bounds and computes
+embeddings from the source image.

@@ -33,22 +33,17 @@ FaceX* facex_init(const char* embed_weights, const char* detect_weights, const c
     FaceX* fx = (FaceX*)calloc(1, sizeof(FaceX));
     if (!fx) return NULL;
 
-    /* Init embedder */
-    if (embed_weights) {
-        if (engine_init(embed_weights, &fx->embed_weights) != 0) {
+    if (detect_weights) {
+        fx->detector = detect_init(detect_weights);
+        if (!fx->detector) {
             free(fx);
             return NULL;
         }
     }
-
-    /* Init detector (optional) */
-    if (detect_weights) {
-        fx->detector = detect_init(detect_weights);
-        if (!fx->detector) {
-            free(fx->embed_weights.raw);
-            free(fx);
-            return NULL;
-        }
+    if (embed_weights && engine_init(embed_weights, &fx->embed_weights) != 0) {
+        if (fx->detector) detect_free(fx->detector);
+        free(fx);
+        return NULL;
     }
 
     fx->ready = 1;
@@ -57,27 +52,41 @@ FaceX* facex_init(const char* embed_weights, const char* detect_weights, const c
 
 int facex_detect(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
                  FaceXResult* out, int max_faces) {
-    if (!fx || !fx->ready || !fx->detector) return -1;
-    if (!rgb_hwc || !out || max_faces <= 0) return -1;
+    return facex_detect_prepared(fx, rgb_hwc, width, height, rgb_hwc,
+                                 width, height, width, height, out, max_faces);
+}
 
-    /* Step 1: Detect faces */
+static float source_coordinate(float value, int padding, int resized, int original) {
+    double mapped = ((double)value - padding) * original / resized;
+    return (float)fmax(0, fmin(original, mapped));
+}
+
+int facex_detect_prepared(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
+                          const uint8_t* canvas, int canvas_w, int canvas_h,
+                          int resized_w, int resized_h, FaceXResult* out, int max_faces) {
+    if (!fx || !fx->ready || !fx->detector || !rgb_hwc || !canvas || !out ||
+        width <= 0 || height <= 0 || max_faces <= 0 ||
+        resized_w <= 0 || resized_w > canvas_w ||
+        resized_h <= 0 || resized_h > canvas_h) return -1;
+
     DetectFace det_faces[32];
     int n_det = max_faces < 32 ? max_faces : 32;
-    int n = detect_run(fx->detector, rgb_hwc, width, height, det_faces, n_det);
-    if (n <= 0) return n;
-
-    /* Step 2: For each face, align + embed */
+    int n = detect_run(fx->detector, canvas, canvas_w, canvas_h, det_faces, n_det);
+    int dx = (canvas_w - resized_w) / 2, dy = (canvas_h - resized_h) / 2;
     for (int i = 0; i < n; i++) {
-        out[i].x1 = det_faces[i].x1;
-        out[i].y1 = det_faces[i].y1;
-        out[i].x2 = det_faces[i].x2;
-        out[i].y2 = det_faces[i].y2;
-        out[i].score = det_faces[i].score;
-        memcpy(out[i].kps, det_faces[i].kps, 10 * sizeof(float));
-
+        DetectFace* face = &det_faces[i];
+        out[i].x1 = source_coordinate(face->x1, dx, resized_w, width);
+        out[i].y1 = source_coordinate(face->y1, dy, resized_h, height);
+        out[i].x2 = source_coordinate(face->x2, dx, resized_w, width);
+        out[i].y2 = source_coordinate(face->y2, dy, resized_h, height);
+        out[i].score = face->score;
+        for (int k = 0; k < 10; k += 2) {
+            out[i].kps[k] = source_coordinate(face->kps[k], dx, resized_w, width);
+            out[i].kps[k+1] = source_coordinate(face->kps[k+1], dy, resized_h, height);
+        }
         /* Align face to 112×112 using keypoints */
         float aligned[112 * 112 * 3];
-        if (!align_face(rgb_hwc, width, height, det_faces[i].kps, aligned)) {
+        if (!fx->embed_weights.raw || !align_face(rgb_hwc, width, height, out[i].kps, aligned)) {
             memset(out[i].embedding, 0, sizeof(out[i].embedding));
             continue;
         }

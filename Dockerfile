@@ -8,31 +8,28 @@
 #   POST /compare — compare two embeddings
 #   GET  /health  — health check
 
-FROM gcc:13 AS builder
+FROM gcc:13-bookworm AS builder
 
 WORKDIR /build
 COPY src/ src/
 COPY include/ include/
 COPY Makefile .
 
-# Build static library + CLI
-RUN gcc -O3 -march=x86-64-v3 -mavx2 -mfma -funroll-loops -static -DFACEX_LIB \
-    -Iinclude -o facex-server \
-    src/facex.c src/detect.c src/align.c src/edgeface_engine.c \
-    src/transformer_ops.c src/gemm_int8_4x8c8.c src/threadpool.c \
-    src/weight_crypto.c \
-    -lm -lpthread && \
-    strip facex-server
+# Build the embedding CLI and the shared detector against the runtime libc.
+RUN make cli CFLAGS="-O3 -march=x86-64-v3" && \
+    gcc -O3 -march=x86-64-v3 -shared -fPIC -Iinclude -o libfacex.so \
+    src/facex.c src/detect.c src/align.c src/transformer_ops.c \
+    src/gemm_int8_4x8c8.c src/threadpool.c src/weight_crypto.c -lm -lpthread && \
+    strip facex-cli libfacex.so
 
-# Runtime — minimal image
-FROM alpine:3.19
-
-RUN apk add --no-cache python3 py3-pip && \
-    pip3 install --break-system-packages flask gunicorn pillow numpy
-
+FROM python:3.11-slim-bookworm
+RUN pip install --no-cache-dir flask gunicorn pillow numpy
 WORKDIR /app
-COPY --from=builder /build/facex-server /app/
+COPY --from=builder /build/facex-cli /app/facex-server
+COPY --from=builder /build/libfacex.so /app/libfacex.so
+COPY python/facex /app/facex
 COPY docker/server.py /app/
+ENV FACEX_LIB=/app/libfacex.so
 
 # Weights must be mounted or baked in
 # docker run -v /path/to/weights:/app/weights facex
