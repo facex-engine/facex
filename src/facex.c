@@ -64,6 +64,13 @@ static float source_coordinate(float value, int padding, int resized, int origin
 int facex_detect_prepared(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
                           const uint8_t* canvas, int canvas_w, int canvas_h,
                           int resized_w, int resized_h, FaceXResult* out, int max_faces) {
+    return facex_detect_prepared_ex(fx, rgb_hwc, width, height, canvas, canvas_w, canvas_h,
+                                    resized_w, resized_h, out, max_faces, 1, -1);
+}
+
+int facex_detect_prepared_ex(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
+                          const uint8_t* canvas, int canvas_w, int canvas_h,
+                          int resized_w, int resized_h, FaceXResult* out, int max_faces, int embeddings, float threshold) {
     if (!fx || !fx->ready || !fx->detector || !rgb_hwc || !canvas || !out ||
         width <= 0 || height <= 0 || max_faces <= 0 ||
         resized_w <= 0 || resized_w > canvas_w ||
@@ -71,7 +78,8 @@ int facex_detect_prepared(FaceX* fx, const uint8_t* rgb_hwc, int width, int heig
 
     DetectFace det_faces[32];
     int n_det = max_faces < 32 ? max_faces : 32;
-    int n = detect_run(fx->detector, canvas, canvas_w, canvas_h, det_faces, n_det);
+    int n = threshold < 0 ? detect_run(fx->detector, canvas, canvas_w, canvas_h, det_faces, n_det)
+                          : detect_run_threshold(fx->detector, canvas, canvas_w, canvas_h, det_faces, n_det, threshold);
     int dx = (canvas_w - resized_w) / 2, dy = (canvas_h - resized_h) / 2;
     for (int i = 0; i < n; i++) {
         DetectFace* face = &det_faces[i];
@@ -84,18 +92,24 @@ int facex_detect_prepared(FaceX* fx, const uint8_t* rgb_hwc, int width, int heig
             out[i].kps[k] = source_coordinate(face->kps[k], dx, resized_w, width);
             out[i].kps[k+1] = source_coordinate(face->kps[k+1], dy, resized_h, height);
         }
-        /* Align face to 112×112 using keypoints */
-        float aligned[112 * 112 * 3];
-        if (!fx->embed_weights.raw || !align_face(rgb_hwc, width, height, out[i].kps, aligned)) {
+        if (embeddings)
+            facex_embed_landmarks(fx, rgb_hwc, width, height, out[i].kps, out[i].embedding);
+        else
             memset(out[i].embedding, 0, sizeof(out[i].embedding));
-            continue;
-        }
-
-        /* Compute embedding */
-        facex_embed(fx, aligned, out[i].embedding);
     }
 
     return n;
+}
+
+int facex_embed_landmarks(FaceX* fx, const uint8_t* rgb, int w, int h,
+                          const float kps[10], float embedding[512]) {
+    if (!fx || !rgb || !kps || !embedding || w <= 0 || h <= 0) return -1;
+    float aligned[112*112*3];
+    if (!fx->embed_weights.raw || !align_face(rgb, w, h, kps, aligned)) {
+        memset(embedding, 0, 512 * sizeof(float));
+        return 0;
+    }
+    return facex_embed(fx, aligned, embedding);
 }
 
 int facex_embed(FaceX* fx, const float* rgb_hwc, float embedding[512]) {
@@ -125,8 +139,7 @@ float facex_similarity(const float emb1[512], const float emb2[512]) {
 void facex_free(FaceX* fx) {
     if (!fx) return;
     if (fx->detector) detect_free(fx->detector);
-    if (fx->embed_weights.raw) free(fx->embed_weights.raw);
-    if (fx->embed_weights.tensors) free(fx->embed_weights.tensors);
+    release_weights(&fx->embed_weights);
     free(fx);
 }
 

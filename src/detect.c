@@ -295,6 +295,12 @@ static int nms_sort(DetectFace* f, int n, float iou_t) {
 
 int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
                DetectFace* out, int max_faces) {
+    return detect_run_threshold(det, rgb_hwc, width, height, out, max_faces,
+                                det ? det->score_threshold : 0);
+}
+
+int detect_run_threshold(Detect* det, const uint8_t* rgb_hwc, int width, int height,
+                         DetectFace* out, int max_faces, float threshold) {
     if (!det || !rgb_hwc || !out || max_faces < 0) return -1;
     if (width <= 0 || height <= 0) return -1;
 
@@ -307,7 +313,10 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
     int h2=H/2, w2=W/2, h4=h2/2, w4=w2/2, h8=h4/2, w8=w4/2, h16=h8/2, w16=w8/2, h32=h16/2, w32=w16/2;
 
     /* Workspace layout: dedicated buffers */
-    uint64_t needed = (uint64_t)3*H*W + (uint64_t)3*64*h2*w2
+    /* Peaks: stem 16 channels at stride two, backbone 64 at stride four. */
+    size_t feature_slots = (size_t)16*h2*w2;
+    size_t object_slots = (size_t)h8*w8;
+    uint64_t needed = (uint64_t)3*H*W + 2 * (uint64_t)feature_slots + object_slots
                   + (size_t)80*h8*w8 + (size_t)64*h16*w16 + (size_t)64*h32*w32;
     if (needed > SIZE_MAX / sizeof(float)) return -1;
     if (needed > det->work_size) {
@@ -318,9 +327,9 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
     }
     float* wp = det->work;
     float* inp  = wp; wp += 3*H*W;
-    float* a    = wp; wp += 64*h2*w2;
-    float* b    = wp; wp += 64*h2*w2;
-    float* c    = wp; wp += 64*h2*w2;
+    float* a    = wp; wp += feature_slots;
+    float* b    = wp; wp += feature_slots;
+    float* c    = wp; wp += object_slots;
     float* f8   = wp; wp += 64*h8*w8;    /* saved stride-8 */
     float* f16  = wp; wp += 64*h16*w16;  /* saved stride-16 */
     float* f32_ = wp; wp += 64*h32*w32;  /* saved stride-32 */
@@ -467,7 +476,7 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
             for (int gx = 0; gx < fw; gx++) {
                 int idx = gy * fw + gx;
                 float sc = sqrtf(sigm(cls[idx]) * sigm(obj[idx]));
-                if (sc < det->score_threshold) continue;
+                if (sc < threshold) continue;
                 /* YuNet regresses the center offset and log width/height. */
                 float cx = (gx + hd[idx]) * st;
                 float cy = (gy + hd[hw + idx]) * st;

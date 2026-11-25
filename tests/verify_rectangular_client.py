@@ -57,6 +57,14 @@ def main():
             buf.seek(0)
             response = client.post("/detect", data={"file": (buf, "image.png")})
             assert response.status_code == 200, response.data
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            buf.seek(0)
+            geometry = client.post("/detect?embeddings=false", data={"file": (buf, "image.png")})
+            assert geometry.status_code == 200
+            expected_geometry = [{k: v for k, v in face.items() if k != "embedding"}
+                                 for face in response.get_json()["faces"]]
+            assert geometry.get_json()["faces"] == expected_geometry
             returned = response.get_json()["faces"]
             assert len(returned) == len(faces)
             for api, face in zip(returned, faces):

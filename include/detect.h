@@ -83,6 +83,10 @@ void detect_set_score_threshold(Detect* det, float threshold);
 /* NMS IoU threshold (default 0.4). */
 void detect_set_nms_threshold(Detect* det, float threshold);
 
+/* Per-call confidence threshold. */
+int detect_run_threshold(Detect* det, const uint8_t* rgb_hwc, int width, int height,
+                         DetectFace* out, int max_faces, float threshold);
+
 /* Minimum predicted width and height in detector pixels (default 16). */
 void detect_set_min_box_side(Detect* det, int pixels);
 

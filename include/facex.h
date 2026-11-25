@@ -70,6 +70,15 @@ int facex_detect_prepared(FaceX* fx, const uint8_t* rgb_hwc, int width, int heig
                           const uint8_t* canvas, int canvas_w, int canvas_h,
                           int resized_w, int resized_h, FaceXResult* out, int max_faces);
 
+/* Set embeddings to zero to skip recognition. A negative threshold uses the configured default. */
+int facex_detect_prepared_ex(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
+                          const uint8_t* canvas, int canvas_w, int canvas_h,
+                          int resized_w, int resized_h, FaceXResult* out, int max_faces, int embeddings, float threshold);
+
+int facex_embed_landmarks(FaceX* fx, const uint8_t* rgb, int w, int h,
+                          const float kps[10], float embedding[512]);
+
+
 /*
  * Compute embedding only (no detection). Input must be pre-aligned 112×112.
  *   rgb_hwc: 112*112*3 float32 array, HWC layout, values in [-1, 1]

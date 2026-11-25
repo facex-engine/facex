@@ -136,6 +136,11 @@ def detect():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
+    flag = request.args.get("embeddings", "true").lower()
+    if flag not in ("true", "false"):
+        return jsonify({"error": "embeddings must be true or false"}), 400
+    embeddings = flag == "true"
+
     try:
         with Image.open(request.files['file'].stream) as uploaded:
             rgb = np.asarray(uploaded.convert('RGB'))
@@ -153,12 +158,13 @@ def detect():
                 if engine.backend != "ctypes":
                     raise RuntimeError("Missing native FaceX library")
                 _detector = engine
-            faces = _detector.detect(rgb, max_faces=32)
+            faces = _detector.detect(rgb, max_faces=32, embeddings=embeddings)
         except (RuntimeError, OSError):
             app.logger.exception("Face detection failed")
             return jsonify({'error': 'Face detection unavailable'}), 503
-    for face in faces:
-        face['embedding'] = face['embedding'].tolist()
+    if embeddings:
+        for face in faces:
+            face['embedding'] = face['embedding'].tolist()
     return jsonify({'faces': faces, 'ms': round((time.perf_counter() - start) * 1000, 2)})
 
 

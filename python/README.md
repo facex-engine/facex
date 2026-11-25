@@ -138,3 +138,24 @@ sim = similarity(emb1, emb2)
 | none | nothing | No | No |
 
 Similarity always works (pure numpy).
+
+### Geometry only and guided refinement
+
+Use `fx.detect(image, embeddings=False)` or `POST /detect?embeddings=false` to
+get original-coordinate boxes, scores and five landmarks. The embedding field
+is omitted. The default response includes embeddings.
+
+For a crowded still image, initialize the native SDK with
+`input_policy="rectangle_bgr", min_box_side=8` and call:
+
+```python
+faces = fx.detect_guided(image, extra_cpu_ms=30, embeddings=False, max_faces=32)
+```
+
+The first pass selects a small-face neighborhood. The SDK runs at most one
+448-budget crop, estimates its CPU cost from the first pass and skips it when
+the estimate exceeds the extra budget. This is an admission estimate, not a
+hard deadline. A zero budget selects the one-pass result. The guided operating
+point uses confidence 0.78, and crops use original-frame coordinates. If
+requested, embeddings are computed only for the retained faces on the source
+RGB image.

@@ -9,6 +9,7 @@ import platform
 import struct
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -43,16 +44,18 @@ class FaceXResult(ctypes.Structure):
     ]
 
 
-def _result_to_dict(r: FaceXResult) -> dict:
+def _result_to_dict(r: FaceXResult, embeddings=True) -> dict:
     """Convert a FaceXResult struct to a Python dict."""
     kps_raw = list(r.kps)
     keypoints = [(kps_raw[i], kps_raw[i + 1]) for i in range(0, 10, 2)]
-    return {
+    face = {
         "bbox": (r.x1, r.y1, r.x2, r.y2),
         "score": r.score,
         "keypoints": keypoints,
-        "embedding": np.array(list(r.embedding), dtype=np.float32),
     }
+    if embeddings:
+        face["embedding"] = np.ctypeslib.as_array(r.embedding).copy()
+    return face
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +339,16 @@ class FaceX:
             self._lib.facex_set_min_box_side.argtypes = [ctypes.c_void_p, ctypes.c_int]
             self._lib.facex_set_min_box_side.restype = None
 
+        if hasattr(self._lib, "facex_detect_prepared_ex"):
+            pixel = ctypes.POINTER(ctypes.c_uint8)
+            scalar = ctypes.POINTER(ctypes.c_float)
+            self._lib.facex_detect_prepared_ex.argtypes = [
+                ctypes.c_void_p, pixel, ctypes.c_int, ctypes.c_int, pixel,
+                ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                ctypes.POINTER(FaceXResult), ctypes.c_int, ctypes.c_int, ctypes.c_float]
+            self._lib.facex_embed_landmarks.argtypes = [
+                ctypes.c_void_p, pixel, ctypes.c_int, ctypes.c_int, scalar, scalar]
+
         # Init engine
         embed_b = self._embed_weights.encode() if self._embed_weights else None
         detect_b = self._detect_weights.encode() if self._detect_weights else None
@@ -364,6 +377,7 @@ class FaceX:
         self,
         image: np.ndarray,
         max_faces: Optional[int] = None,
+        *, embeddings: bool = True,
     ) -> List[dict]:
         """
         Detect faces and compute embeddings.
@@ -371,6 +385,7 @@ class FaceX:
         Args:
             image: RGB uint8 numpy array, shape (H, W, 3).
             max_faces: Override max faces for this call.
+            embeddings: Pass False to omit alignment, embedding inference and vectors.
 
         Returns:
             List of dicts, each with keys:
@@ -389,33 +404,76 @@ class FaceX:
         if self._input_policy != "native" and self.backend != "ctypes":
             raise RuntimeError("Rectangle input requires the native FaceX shared library")
         if self._lib and self._handle:
-            return self._detect_ctypes(image, w, h, mf)
+            return self._detect_ctypes(image, w, h, mf, embeddings)
         elif self._cli_path:
-            if self._min_box_side != 16:
-                raise RuntimeError("Custom min_box_side requires the native shared library")
+            if not embeddings or self._min_box_side != 16:
+                raise RuntimeError("This detection option requires the native shared library")
             return self._detect_cli(image, w, h, mf)
         else:
             raise RuntimeError(
                 "No backend available. Install the shared library or set FACEX_CLI."
             )
 
-    def _detect_ctypes(self, image: np.ndarray, w: int, h: int, max_faces: int) -> List[dict]:
+    def _detect_ctypes(self, image, w, h, max_faces, embeddings=True, side=None, threshold=-1):
         results = (FaceXResult * max_faces)()
-        ptr = image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        pixels = ctypes.POINTER(ctypes.c_uint8)
+        ptr = image.ctypes.data_as(pixels)
+        canvas, rw, rh = image, w, h
         if self._input_policy != "native":
             from .yunet import prepare_rectangle
-            side = 800 if self._input_policy == "rectangle_bgr_800" else 640
+            side = side or (800 if self._input_policy == "rectangle_bgr_800" else 640)
             canvas, rw, rh = prepare_rectangle(image, bgr=self._input_policy != "rectangle", side=side)
-            ch, cw = canvas.shape[:2]
-            n = self._lib.facex_detect_prepared(
-                self._handle, ptr, w, h,
-                canvas.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), cw, ch,
+        ch, cw = canvas.shape[:2]
+        args = (self._handle, ptr, w, h, canvas.ctypes.data_as(pixels), cw, ch,
                 rw, rh, results, max_faces)
-        else:
+        if hasattr(self._lib, "facex_detect_prepared_ex"):
+            n = self._lib.facex_detect_prepared_ex(*args, int(embeddings), threshold)
+        elif not embeddings or threshold >= 0:
+            raise RuntimeError("This option requires an updated native library")
+        elif self._input_policy == "native":
             n = self._lib.facex_detect(self._handle, ptr, w, h, results, max_faces)
+        else:
+            n = self._lib.facex_detect_prepared(*args)
         if n < 0:
             raise RuntimeError(f"facex_detect returned error code {n}")
-        return [_result_to_dict(results[i]) for i in range(n)]
+        return [_result_to_dict(results[i], embeddings) for i in range(n)]
+
+    def detect_guided(self, image, *, extra_cpu_ms, embeddings=True, max_faces=None):
+        """Refine at most one crop when its estimated CPU cost fits the extra budget."""
+        from .yunet import guided_crop, merge_faces
+        if self._input_policy != "rectangle_bgr" or self._min_box_side != 8 or self.backend != "ctypes":
+            raise ValueError("Guided detection requires native rectangle_bgr with min_box_side=8")
+        if not np.isfinite(extra_cpu_ms) or extra_cpu_ms < 0:
+            raise ValueError("extra_cpu_ms must be finite and nonnegative")
+        image = np.ascontiguousarray(image, dtype=np.uint8)
+        if image.ndim != 3 or image.shape[2] != 3 or min(image.shape[:2]) == 0:
+            raise ValueError("Expected a nonempty RGB image")
+        h, w = image.shape[:2]
+        start = time.thread_time_ns()
+        faces = self._detect_ctypes(image, w, h, 32, False, 640, .35)
+        estimate = (time.thread_time_ns() - start) / 1e6 * (448/640)**2
+        crop = guided_crop(faces, w, h) if estimate <= extra_cpu_ms else None
+        if crop:
+            x, y, cw, ch = crop
+            patch = np.ascontiguousarray(image[y:y+ch, x:x+cw])
+            extra = self._detect_ctypes(patch, cw, ch, 32, False, 448, .35)
+            faces = merge_faces(faces, extra, x, y)
+        threshold = .78 if estimate <= extra_cpu_ms else self._score_threshold
+        limit = self._max_faces if max_faces is None else max_faces
+        if limit < 0:
+            raise ValueError("max_faces must be nonnegative")
+        faces = [f for f in faces if f["score"] >= threshold][:min(32, limit)]
+        if embeddings:
+            scalar = ctypes.POINTER(ctypes.c_float)
+            for face in faces:
+                kps = np.asarray(face["keypoints"], dtype=np.float32)
+                vec = np.empty(512, dtype=np.float32)
+                rc = self._lib.facex_embed_landmarks(self._handle, image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
+                                                      w, h, kps.ctypes.data_as(scalar), vec.ctypes.data_as(scalar))
+                if rc < 0:
+                    raise RuntimeError("Failed to embed guided detection")
+                face["embedding"] = vec
+        return faces
 
     def _detect_cli(self, image: np.ndarray, w: int, h: int, max_faces: int) -> List[dict]:
         """Subprocess fallback: pipe image data to CLI and parse output."""

@@ -12,6 +12,7 @@
  */
 
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -63,6 +64,7 @@ typedef struct {
     /* INT8 pre-packed MatMul weights */
     PackedMM* mm;      /* array, indexed same as tensors */
     /* FP32 pre-packed MatMul weights */
+    float* cached_position;
     PackedFP32* fp;    /* array, indexed same as tensors */
 } Weights;
 
@@ -72,72 +74,44 @@ static int load_weights(const char* path, Weights* w) {
     FILE* f = fopen(path, "rb");
     if (!f) return -1;
 
-    fseek(f, 0, SEEK_END);
-    w->raw_size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    w->raw = (uint8_t*)malloc(w->raw_size);
-    fread(w->raw, 1, w->raw_size, f);
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
+    long length = ftell(f);
+    if (length < 8) { fclose(f); return -1; }
+    rewind(f);
+    w->raw_size = (size_t)length;
+    w->raw = malloc(w->raw_size);
+    int ok = w->raw && fread(w->raw, 1, w->raw_size, f) == w->raw_size;
     fclose(f);
+    if (!ok) return -1;
 
-    /* Handle encrypted weights (EFXE magic) */
+    uint8_t* payload = w->raw;
+    size_t size = w->raw_size;
 #ifndef NO_CRYPTO
-    if (w->raw_size >= 20 && memcmp(w->raw, "EFXE", 4) == 0) {
-        if (!g_license_key || !g_license_key[0]) {
-            fprintf(stderr, "ERROR: Encrypted weights require LICENSE_KEY\n");
-            fprintf(stderr, "Set LICENSE_KEY environment variable or pass --license KEY\n");
-            free(w->raw);
-            return -3;
-        }
-        int r = weight_decrypt_inplace(w->raw, w->raw_size, g_license_key);
-        if (r == -2) {
-            fprintf(stderr, "ERROR: Invalid license key for this machine\n");
-            free(w->raw);
-            return -2;
-        } else if (r != 0) {
-            fprintf(stderr, "ERROR: Decryption failed (%d)\n", r);
-            free(w->raw);
-            return r;
-        }
-        /* After decryption, EFXS payload starts at offset 20 */
-        uint8_t* payload = w->raw + 20;
-        size_t payload_size = w->raw_size - 20;
-
-        if (memcmp(payload, "EFXS", 4) != 0) {
-            free(w->raw);
-            return -1;
-        }
-
-        uint32_t n = *(uint32_t*)(payload + 4);
-        w->n_tensors = n;
-        w->tensors = (float**)malloc(n * sizeof(float*));
-
-        size_t off = 8;
-        for (uint32_t i = 0; i < n; i++) {
-            uint32_t sz = *(uint32_t*)(payload + off);
-            off += 4;
-            w->tensors[i] = (float*)(payload + off);
-            off += sz;
-        }
-        return 0;
+    if (size >= 20 && memcmp(payload, "EFXE", 4) == 0) {
+        if (!g_license_key || !*g_license_key) return -3;
+        int rc = weight_decrypt_inplace(payload, size, g_license_key);
+        if (rc) return rc;
+        payload += 20;
+        size -= 20;
     }
 #endif
-
-    /* Unencrypted weights (EFXS magic) */
-    if (memcmp(w->raw, "EFXS", 4) != 0) return -1;
-
-    uint32_t n = *(uint32_t*)(w->raw + 4);
-    w->n_tensors = n;
-    w->tensors = (float**)malloc(n * sizeof(float*));
-
+    if (size < 8 || memcmp(payload, "EFXS", 4) != 0) return -1;
+    uint32_t n;
+    memcpy(&n, payload + 4, sizeof(n));
+    if (n < 286 || n > (size-8)/4 || n > INT_MAX) return -1;
+    w->n_tensors = (int)n;
+    w->tensors = calloc(n, sizeof(*w->tensors));
+    if (!w->tensors) return -1;
     size_t off = 8;
     for (uint32_t i = 0; i < n; i++) {
-        uint32_t sz = *(uint32_t*)(w->raw + off);
-        off += 4;
-        w->tensors[i] = (float*)(w->raw + off);
-        off += sz;
+        uint32_t bytes;
+        if (size-off < sizeof(bytes)) return -1;
+        memcpy(&bytes, payload+off, sizeof(bytes));
+        off += sizeof(bytes);
+        if (bytes > size-off || bytes % sizeof(float)) return -1;
+        w->tensors[i] = (float*)(payload+off);
+        off += bytes;
     }
-
     return 0;
 }
 
@@ -451,14 +425,20 @@ void xca_block(float* x_hwc, int H, int W, int C,
  * AVX2 optimized: vectorize across output channels (Cout). */
 /* conv2d_hwc with pre-transposed weights in [Cin*KK, Cout] layout.
  * At load time, call conv2d_hwc_reorder_weights() to transpose OIHW → [Cin*KK, Cout]. */
-void conv2d_hwc_reorder_weights(float* w, int Cout, int Cin, int KK) {
+static int reorder_conv_weights(float* w, int Cout, int Cin, int KK) {
     /* In-place transpose from [Cout, Cin*KK] to [Cin*KK, Cout] */
     float* tmp = (float*)malloc((size_t)Cout * Cin * KK * sizeof(float));
+    if (!tmp) return -1;
     memcpy(tmp, w, (size_t)Cout * Cin * KK * sizeof(float));
     for (int co = 0; co < Cout; co++)
         for (int ci_ki = 0; ci_ki < Cin * KK; ci_ki++)
             w[ci_ki * Cout + co] = tmp[co * Cin * KK + ci_ki];
     free(tmp);
+    return 0;
+}
+
+void conv2d_hwc_reorder_weights(float* w, int Cout, int Cin, int KK) {
+    (void)reorder_conv_weights(w, Cout, Cin, KK);
 }
 
 void conv2d_hwc(const float* in_hwc, int Cin, int H, int W,
@@ -966,21 +946,42 @@ static void edgeface_forward(const float* input_chw, /* [3, 112, 112] */
 }
 
 /* ============ Engine Init (used by both main and library API) ============ */
-static int engine_init(const char* weights_path, Weights* weights) {
-    /* Init thread pool for parallel GEMM */
-    {
-        extern void tp_init(int);
-        tp_init(4);
+static void release_weights(Weights* w) {
+    if (_g_weights == w) _g_weights = NULL;
+    for (int i = 0; i < w->n_tensors; i++) {
+        if (w->mm) {
+            free(w->mm[i].packed);
+            free(w->mm[i].w_scales);
+            free(w->mm[i].col_sums);
+        }
+        if (w->fp) {
+#ifdef _WIN32
+            _aligned_free(w->fp[i].data);
+#else
+            free(w->fp[i].data);
+#endif
+        }
     }
+    free(w->mm);
+    free(w->fp);
+    free(w->cached_position);
+    free(w->tensors);
+    free(w->raw);
+    memset(w, 0, sizeof(*w));
+}
 
+static int engine_init(const char* weights_path, Weights* weights) {
+    memset(weights, 0, sizeof(*weights));
     if (load_weights(weights_path, weights) != 0) {
         fprintf(stderr, "Failed to load %s\n", weights_path);
-        return -1;
+        goto fail;
     }
     /* Allocate packed MatMul weight arrays */
     weights->mm = (PackedMM*)calloc(weights->n_tensors, sizeof(PackedMM));
     weights->fp = (PackedFP32*)calloc(weights->n_tensors, sizeof(PackedFP32));
 
+
+    if (!weights->mm || !weights->fp) goto fail;
 
     /* Pre-pack MatMul weights to INT8 c8 format */
     {
@@ -1045,6 +1046,8 @@ static int engine_init(const char* weights_path, Weights* weights) {
             int8_t* w_int8 = (int8_t*)malloc((size_t)N * K);
             float* w_scales = (float*)malloc(N * sizeof(float));
 
+            weights->mm[idx].w_scales = w_scales;
+            if (!w_int8 || !w_scales) { free(w_int8); goto fail; }
             for (int n = 0; n < N; n++) {
                 float mx = 0;
                 for (int k = 0; k < K; k++) {
@@ -1064,11 +1067,12 @@ static int engine_init(const char* weights_path, Weights* weights) {
             int pw_size = packed_weights_size_4x8c8(K, N);
             void* packed = malloc(pw_size);
             int32_t* col_sums = (int32_t*)calloc(((N+7)&~7), sizeof(int32_t));
-            pack_weights_4x8c8(w_int8, NULL, K, N, packed, col_sums);
+
 
             weights->mm[idx].packed = packed;
             weights->mm[idx].col_sums = col_sums;
-            weights->mm[idx].w_scales = w_scales;
+            if (!packed || !col_sums) { free(w_int8); goto fail; }
+            pack_weights_4x8c8(w_int8, NULL, K, N, packed, col_sums);
             weights->mm[idx].K = K;
             weights->mm[idx].N = N;
             packed_count++;
@@ -1116,15 +1120,11 @@ static int engine_init(const char* weights_path, Weights* weights) {
             int sz = packed_b_fp32_size(K_, N_);
             float* packed;
 #ifdef _WIN32
-#ifdef _WIN32
             packed = (float*)_aligned_malloc((size_t)sz * sizeof(float), 64);
-#else
-            if (posix_memalign((void**)&packed, 64, (size_t)sz * sizeof(float)) != 0) packed = NULL;
-#endif
 #else
             packed = (float*)aligned_alloc(32, (size_t)sz * sizeof(float));
 #endif
-            if (!packed) packed = (float*)malloc((size_t)sz * sizeof(float));
+            if (!packed) goto fail;
             pack_b_fp32(weights->tensors[idx], K_, N_, packed);
             weights->fp[idx].data = packed;
             weights->fp[idx].K = K_;
@@ -1154,6 +1154,7 @@ static int engine_init(const char* weights_path, Weights* weights) {
         for (int j = 0; j < 3; j++) {
             int idx = stage0_dw[j]; int C = 32, KK = 9;
             float* tmp = (float*)malloc(C * KK * sizeof(float));
+            if (!tmp) goto fail;
             memcpy(tmp, weights->tensors[idx], C * KK * sizeof(float));
             for (int c = 0; c < C; c++)
                 for (int ki = 0; ki < KK; ki++)
@@ -1165,6 +1166,7 @@ static int engine_init(const char* weights_path, Weights* weights) {
         for (int j = 0; j < 2; j++) {
             int idx = stage1_dw[j]; int C = 64, KK = 25;
             float* tmp = (float*)malloc(C * KK * sizeof(float));
+            if (!tmp) goto fail;
             memcpy(tmp, weights->tensors[idx], C * KK * sizeof(float));
             for (int c = 0; c < C; c++)
                 for (int ki = 0; ki < KK; ki++)
@@ -1175,6 +1177,7 @@ static int engine_init(const char* weights_path, Weights* weights) {
         for (int b = 0; b < 8; b++) {
             int idx = 105 + b * 11; int C = 100, KK = 49;
             float* tmp = (float*)malloc(C * KK * sizeof(float));
+            if (!tmp) goto fail;
             memcpy(tmp, weights->tensors[idx], C * KK * sizeof(float));
             for (int c = 0; c < C; c++)
                 for (int ki = 0; ki < KK; ki++)
@@ -1186,6 +1189,7 @@ static int engine_init(const char* weights_path, Weights* weights) {
         for (int j = 0; j < 2; j++) {
             int idx = stage3_dw[j]; int C = 192, KK = 81;
             float* tmp = (float*)malloc(C * KK * sizeof(float));
+            if (!tmp) goto fail;
             memcpy(tmp, weights->tensors[idx], C * KK * sizeof(float));
             for (int c = 0; c < C; c++)
                 for (int ki = 0; ki < KK; ki++)
@@ -1195,9 +1199,9 @@ static int engine_init(const char* weights_path, Weights* weights) {
     }
 
     /* Reorder downsample conv weights: OIHW [Cout,Cin,K,K] → [Cin*KK, Cout] for AVX2 */
-    conv2d_hwc_reorder_weights(weights->tensors[42], 64, 32, 4);   /* ds 0→1: 32→64 2×2 */
-    conv2d_hwc_reorder_weights(weights->tensors[103], 100, 64, 4); /* ds 1→2: 64→100 2×2 */
-    conv2d_hwc_reorder_weights(weights->tensors[223], 192, 100, 4);/* ds 2→3: 100→192 2×2 */
+    if (reorder_conv_weights(weights->tensors[42], 64, 32, 4) ||
+        reorder_conv_weights(weights->tensors[103], 100, 64, 4) ||
+        reorder_conv_weights(weights->tensors[223], 192, 100, 4)) goto fail;
 
     /* Register JIT kernels for small-K matmuls (optional — link jit_gemm.c) */
 #ifdef USE_JIT
@@ -1219,6 +1223,8 @@ static int engine_init(const char* weights_path, Weights* weights) {
     {
         int HW = 196, C = 64;
         float* pos_cached = (float*)malloc((size_t)HW * C * sizeof(float));
+        if (!pos_cached) goto fail;
+        weights->cached_position = pos_cached;
         const float* pos_const = weights->tensors[69]; /* [1, 64, 14, 14] NCHW */
         const float* pos_w = weights->tensors[70];      /* [64, 64, 1, 1] = [Cout, Cin] */
         const float* pos_b = weights->tensors[71];      /* [64] */
@@ -1233,6 +1239,9 @@ static int engine_init(const char* weights_path, Weights* weights) {
     }
 
     return 0;
+fail:
+    release_weights(weights);
+    return -1;
 }
 
 /* ============ Main ============ */
@@ -1265,6 +1274,7 @@ int main(int argc, char** argv) {
         size_t rd = fread(input, sizeof(float), 3*112*112, stdin);
         if (rd != 3*112*112) {
             fprintf(stderr, "Expected %d floats, got %zu\n", 3*112*112, rd);
+            release_weights(&weights);
             return 1;
         }
     } else {
@@ -1324,8 +1334,7 @@ int main(int argc, char** argv) {
         fflush(stdout);
     }
 
-    free(weights.tensors);
-    free(weights.raw);
+    release_weights(&weights);
     return 0;
 }
 #endif /* FACEX_LIB */

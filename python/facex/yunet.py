@@ -24,3 +24,39 @@ def prepare_rectangle(image, *, bgr=False, side=640):
     pixels = np.asarray(Image.fromarray(image).resize((rw, rh), bicubic))
     canvas[y:y + rh, x:x + rw] = pixels[:, :, ::-1] if bgr else pixels
     return canvas, rw, rh
+
+
+def guided_crop(faces, w, h):
+    centers = []
+    for f in faces:
+        l, t, r, b = f["bbox"]
+        if np.sqrt((r-l)*(b-t))*320/max(w,h) < 20 and f["score"] < .85:
+            centers.append(((l+r)/2, (t+b)/2))
+    if not centers:
+        return None
+    centers = np.asarray(centers)
+    delta = np.abs(centers[:, None] - centers)
+    counts = ((delta[:,:,0] <= w/4) & (delta[:,:,1] <= h/4)).sum(1)
+    cx, cy = centers[np.argmax(counts)]
+    cw, ch = max(1,w//2), max(1,h//2)
+    return int(np.clip(cx-cw/2,0,w-cw)), int(np.clip(cy-ch/2,0,h-ch)), cw, ch
+
+
+def merge_faces(base, extra, x, y):
+    for f in extra:
+        l,t,r,b = f["bbox"]
+        f["bbox"] = (x+l,y+t,x+r,y+b)
+        f["keypoints"] = [(x+kx,y+ky) for kx,ky in f["keypoints"]]
+    kept = []
+    for f in sorted(base + extra, key=lambda face: -face["score"]):
+        l,t,r,b = f["bbox"]
+        for prior in kept:
+            pl,pt,pr,pb = prior["bbox"]
+            inter = max(0,min(r,pr)-max(l,pl))*max(0,min(b,pb)-max(t,pt))
+            if inter > .4*((r-l)*(b-t)+(pr-pl)*(pb-pt)-inter):
+                break
+        else:
+            kept.append(f)
+            if len(kept) == 32:
+                break
+    return kept
