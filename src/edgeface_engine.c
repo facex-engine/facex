@@ -221,7 +221,7 @@ static void xca_dw_conv_nchw(const float* in_nchw, int C, int H, int W,
     }
 }
 
-static void xca_block(float* x_hwc, int H, int W, int C,
+void xca_block(float* x_hwc, int H, int W, int C,
                       const float* gamma_xca, const float* gamma,
                       /* DW conv for split heads */
                       int n_dw_splits, const int* dw_split_sizes,
@@ -461,7 +461,7 @@ void conv2d_hwc_reorder_weights(float* w, int Cout, int Cin, int KK) {
     free(tmp);
 }
 
-static void conv2d_hwc(const float* in_hwc, int Cin, int H, int W,
+void conv2d_hwc(const float* in_hwc, int Cin, int H, int W,
                        const float* w, /* REORDERED to [Cin*KK, Cout] */
                        const float* b, int Cout, int K, int stride,
                        float* out_hwc) {
@@ -618,7 +618,7 @@ static void _mlp_rows(void* ctx_, int start, int end) {
 
 /* ============ ConvNeXt Block (HWC in/out, NCHW for DW) ============ */
 /* x[HW,C] → LN → DW Conv → gamma*x → LN → MLP(4 MatMul) → +residual */
-static void convnext_block(float* x_hwc, int H, int W, int C,
+void convnext_block(float* x_hwc, int H, int W, int C,
                            const float* gamma,
                            const float* dw_w, const float* dw_b, int K,
                            const float* ln_w, const float* ln_b,

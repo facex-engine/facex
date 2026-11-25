@@ -534,6 +534,10 @@ void matmul_fp32(const float* A, const float* B, float* C,
  * Each panel of 8 columns is stored contiguously along K dimension.
  * This gives sequential 32-byte (1 cache line) loads in the inner K loop. */
 void pack_b_fp32(const float* B, int K, int N, float* packed) {
+#ifndef __AVX2__
+    memcpy(packed, B, (size_t)K * N * sizeof(float));
+    return;
+#endif
 #ifdef __AVX512F__
     int NR = 16;
 #else
@@ -554,7 +558,9 @@ void pack_b_fp32(const float* B, int K, int N, float* packed) {
 }
 
 int packed_b_fp32_size(int K, int N) {
-#ifdef __AVX512F__
+#ifndef __AVX2__
+    return K * N;
+#elif defined(__AVX512F__)
     return ((N + 15) / 16) * K * 16;
 #else
     return ((N + 7) / 8) * K * 8;
@@ -810,6 +816,22 @@ void matmul_fp32_packed(const float* A, const float* B_packed, float* C,
  * Eliminates separate bias addition pass. */
 void matmul_fp32_packed_bias(const float* A, const float* B_packed, const float* bias,
                              float* C, int M, int K, int N) {
+#ifdef __AVX512F__
+    /* AVX512 packs 16 columns per panel; the fused AVX2 kernel expects eight. */
+    {
+#else
+    if (!bias || N % 8 != 0) {
+#endif
+        matmul_fp32_packed(A, B_packed, C, M, K, N);
+        for (int m = 0; m < M; m++) {
+            for (int n = 0; n < N; n++) {
+                size_t i = (size_t)m * N + n;
+                float v = C[i] + (bias ? bias[n] : 0.0f);
+                C[i] = v;
+            }
+        }
+        return;
+    }
 #ifdef __AVX2__
     int NR = 8;
     int n_panels = (N + NR - 1) / NR;
@@ -925,6 +947,22 @@ static inline __m256 _gelu_ymm(__m256 v) {
 
 void matmul_bias_gelu_packed(const float* A, const float* B_packed, const float* bias,
                               float* C, int M, int K, int N) {
+#ifdef __AVX512F__
+    /* AVX512 packs 16 columns per panel; the fused AVX2 kernel expects eight. */
+    {
+#else
+    if (!bias || N % 8 != 0) {
+#endif
+        matmul_fp32_packed(A, B_packed, C, M, K, N);
+        for (int m = 0; m < M; m++) {
+            for (int n = 0; n < N; n++) {
+                size_t i = (size_t)m * N + n;
+                float v = C[i] + (bias ? bias[n] : 0.0f);
+                C[i] = 0.5f * v * (1.0f + erff(v * 0.7071067811865476f));
+            }
+        }
+        return;
+    }
 #ifdef __AVX2__
     int NR = 8;
     int n_panels = (N + NR - 1) / NR;

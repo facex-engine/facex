@@ -8,18 +8,11 @@ CC ?= gcc
 CFLAGS = -O3 -march=native -mfma -funroll-loops
 LDFLAGS = -lm -lpthread
 
-# Detect AVX-512
-AVX512 := $(shell $(CC) -mavx512f -dM -E - < /dev/null 2>/dev/null | grep -c AVX512F)
-ifeq ($(AVX512),1)
-  CFLAGS += -mavx512f -mavx512vnni -mprefer-vector-width=512
-endif
-
 ifeq ($(OS),Windows_NT)
   LDFLAGS += -lsynchronization
   EXT = .exe
 endif
 
-SRCS = src/facex.c src/transformer_ops.c src/gemm_int8_4x8c8.c src/threadpool.c
 
 .PHONY: all clean example lib cli encrypt test detect-lib v2-cli
 
@@ -28,14 +21,15 @@ all: lib cli detect-lib v2-cli
 # Static library
 lib: libfacex.a
 
-libfacex.a: $(SRCS)
-	$(CC) $(CFLAGS) -DFACEX_LIB -c src/facex.c -o facex.o
-	$(CC) $(CFLAGS) -c src/transformer_ops.c -o transformer_ops.o
-	$(CC) $(CFLAGS) -c src/gemm_int8_4x8c8.c -o gemm_int8_4x8c8.o
-	$(CC) $(CFLAGS) -c src/threadpool.c -o threadpool.o
-	ar rcs $@ facex.o transformer_ops.o gemm_int8_4x8c8.o threadpool.o
-	@rm -f *.o
-	@echo "Built libfacex.a"
+LIBOBJ = facex.o transformer_ops.o gemm_int8_4x8c8.o threadpool.o detect.o align.o weight_crypto.o
+
+libfacex.a: $(LIBOBJ)
+	$(AR) rcs $@ $^
+
+%.o: src/%.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Iinclude -MMD -MP -c $< -o $@
+
+-include $(LIBOBJ:.o=.d)
 
 # Standalone CLI (for Go subprocess / testing)
 cli: facex-cli$(EXT)
@@ -56,8 +50,15 @@ encrypt: facex-encrypt$(EXT)
 facex-encrypt$(EXT): src/weight_crypto.c
 	$(CC) $(CFLAGS) -DWEIGHT_CRYPTO_MAIN -o $@ $< $(LDFLAGS)
 
+.PHONY: check
+check: kernel-test$(EXT)
+	./kernel-test$(EXT)
+
+kernel-test$(EXT): tests/packed_math.c libfacex.a
+	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
+
 # Golden test
-test: golden-test$(EXT)
+test: check golden-test$(EXT)
 	@echo "Running golden test..."
 	@./golden-test$(EXT) data/edgeface_xs_fp32.bin
 
@@ -89,11 +90,8 @@ example_mfn$(EXT): examples/example_mfn.c src/facex_mfn.c
 # later sprints — see docs/plan/detector_plan.md).
 detect-lib: libdetect.a
 
-libdetect.a: src/detect.c include/detect.h
-	$(CC) $(CFLAGS) -Iinclude -c src/detect.c -o detect.o
-	ar rcs $@ detect.o
-	@rm -f detect.o
-	@echo "Built libdetect.a"
+libdetect.a: detect.o
+	$(AR) rcs $@ $^
 
 clean:
-	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) *.o
+	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) *.o $(LIBOBJ:.o=.d)
