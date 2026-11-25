@@ -25,6 +25,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+from verification_thresholds import fold_metrics
+
 import arch as arch_module
 from model import MobileFaceNet
 from dataset import MS1MDataset
@@ -113,22 +115,7 @@ def compute_embeddings_for_pairs(model, pairs, ds, device="cuda",
 
 def kfold_threshold(sims: np.ndarray, issame: np.ndarray, n_folds: int = N_FOLDS):
     """10-fold CV: find best threshold on train folds, evaluate on held-out."""
-    n = len(sims)
-    folds = np.array_split(np.arange(n), n_folds)
-    thrs = np.linspace(-0.5, 1.0, 601)
-    accs, best_thrs = [], []
-    for i in range(n_folds):
-        test_idx = folds[i]
-        train_idx = np.concatenate([folds[j] for j in range(n_folds) if j != i])
-        best_acc, best_thr = 0.0, 0.0
-        for thr in thrs:
-            pred = sims[train_idx] >= thr
-            a = (pred == issame[train_idx]).mean()
-            if a > best_acc:
-                best_acc, best_thr = a, thr
-        pred = sims[test_idx] >= best_thr
-        accs.append((pred == issame[test_idx]).mean())
-        best_thrs.append(best_thr)
+    accs, best_thrs = fold_metrics(sims, issame, np.linspace(-0.5, 1.0, 601), n_folds)
     return {
         "acc_mean": float(np.mean(accs)),
         "acc_std": float(np.std(accs)),

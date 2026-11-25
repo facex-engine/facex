@@ -480,6 +480,22 @@ static void conv2d_1x1_nchw(const float *x, const MfnConv *c,
 }
 
 
+static inline float dw3x3_pixel(const float *xc, const float *kw, float bi,
+                                int Hin, int Win, int iy_base, int ix_base)
+{
+    float sum = bi;
+    for (int ky = 0; ky < 3; ky++) {
+        int iy = iy_base + ky;
+        if (iy < 0 || iy >= Hin) continue;
+        for (int kx = 0; kx < 3; kx++) {
+            int ix = ix_base + kx;
+            if (ix < 0 || ix >= Win) continue;
+            sum += xc[iy * Win + ix] * kw[ky * 3 + kx];
+        }
+    }
+    return sum;
+}
+
 /* Depthwise 3x3 conv stride={1,2}, padding=1. Per-channel SIMD over spatial. */
 static void conv2d_dw3x3_nchw(const float *x, const MfnConv *c,
                               int Hin, int Win, float *y)
@@ -497,21 +513,26 @@ static void conv2d_dw3x3_nchw(const float *x, const MfnConv *c,
         float bi = bias[cc];
 
         for (int oy = 0; oy < Hout; oy++) {
-            for (int ox = 0; ox < Wout; ox++) {
-                float sum = bi;
-                int iy_base = oy * S - 1;
-                int ix_base = ox * S - 1;
-                for (int ky = 0; ky < 3; ky++) {
-                    int iy = iy_base + ky;
-                    if (iy < 0 || iy >= Hin) continue;
-                    for (int kx = 0; kx < 3; kx++) {
-                        int ix = ix_base + kx;
-                        if (ix < 0 || ix >= Win) continue;
-                        sum += xc[iy * Win + ix] * kw[ky * 3 + kx];
+            float *out = yc + oy * Wout;
+            int ox = 0;
+#ifdef __AVX2__
+            /* Eight adjacent interior pixels share the same nine coefficients. */
+            if (S == 1 && Win >= 10 && oy > 0 && oy + 1 < Hin) {
+                out[0] = dw3x3_pixel(xc, kw, bi, Hin, Win, oy - 1, -1);
+                for (ox = 1; ox + 8 < Win; ox += 8) {
+                    __m256 acc = _mm256_set1_ps(bi);
+                    for (int ky = 0; ky < 3; ky++) {
+                        const float *row = xc + (size_t)(oy + ky - 1) * Win + ox - 1;
+                        for (int kx = 0; kx < 3; kx++)
+                            acc = _mm256_fmadd_ps(_mm256_loadu_ps(row + kx),
+                                                  _mm256_set1_ps(kw[3 * ky + kx]), acc);
                     }
+                    _mm256_storeu_ps(out + ox, acc);
                 }
-                yc[oy * Wout + ox] = sum;
             }
+#endif
+            for (; ox < Wout; ox++)
+                out[ox] = dw3x3_pixel(xc, kw, bi, Hin, Win, oy * S - 1, ox * S - 1);
         }
     }
 }

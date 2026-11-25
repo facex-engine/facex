@@ -18,6 +18,11 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
+if __package__:
+    from .verification_thresholds import fold_metrics
+else:
+    from verification_thresholds import fold_metrics
+
 
 def load_lfw(bin_path: str):
     with open(bin_path, "rb") as f:
@@ -64,24 +69,7 @@ def evaluate(model, lfw_bin_path: str, device: str = "cuda",
     sims = (a * b).sum(dim=-1).numpy()        # cosine, [n_pairs]
     issame = np.asarray(issame, dtype=bool)
 
-    # 10-fold CV for best threshold
-    folds = np.array_split(np.arange(n_pairs), 10)
-    best_thresholds = []
-    accs = []
-    for i in range(10):
-        test_idx = folds[i]
-        train_idx = np.concatenate([folds[j] for j in range(10) if j != i])
-        thr_grid = np.linspace(0.0, 1.0, 401)
-        best_thr, best_acc = 0.0, 0.0
-        for thr in thr_grid:
-            pred = sims[train_idx] >= thr
-            acc = (pred == issame[train_idx]).mean()
-            if acc > best_acc:
-                best_acc, best_thr = acc, thr
-        # apply on test
-        pred = sims[test_idx] >= best_thr
-        accs.append((pred == issame[test_idx]).mean())
-        best_thresholds.append(best_thr)
+    accs, best_thresholds = fold_metrics(sims, issame, np.linspace(0.0, 1.0, 401), 10)
     return {
         "accuracy_mean": float(np.mean(accs)),
         "accuracy_std": float(np.std(accs)),

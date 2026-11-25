@@ -51,8 +51,12 @@ facex-encrypt$(EXT): src/weight_crypto.c
 	$(CC) $(CFLAGS) -DWEIGHT_CRYPTO_MAIN -o $@ $< $(LDFLAGS)
 
 .PHONY: check
-check: kernel-test$(EXT)
+check: kernel-test$(EXT) mfn-depthwise-test$(EXT)
 	./kernel-test$(EXT)
+	./mfn-depthwise-test$(EXT)
+
+mfn-depthwise-test$(EXT): tests/mfn_depthwise.c src/facex_mfn.c include/facex_mfn.h
+	$(CC) $(CFLAGS) -Iinclude -o $@ $< $(LDFLAGS)
 
 kernel-test$(EXT): tests/packed_math.c libfacex.a
 	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
@@ -94,4 +98,4 @@ libdetect.a: detect.o
 	$(AR) rcs $@ $^
 
 clean:
-	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) *.o $(LIBOBJ:.o=.d)
+	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) *.o $(LIBOBJ:.o=.d)
