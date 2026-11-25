@@ -19,7 +19,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 EMBEDDING_DIM = 512
 MAX_FACES_DEFAULT = 20
-_POLICY_THRESHOLDS = {"native": 0.5, "rectangle": 0.58, "rectangle_bgr": 0.70}
+_POLICY_THRESHOLDS = {"native": 0.5, "rectangle": 0.58, "rectangle_bgr": 0.70, "rectangle_bgr_800": 0.75}
 
 # FaceXResult struct layout:
 #   float x1, y1, x2, y2, score   (5 floats = 20 bytes)
@@ -206,7 +206,7 @@ class FaceX:
         detect_weights:  Path to detector weights. Auto-detected if None.
         license_key:     License key for encrypted weights (None for plain).
         score_threshold: Override the score threshold calibrated for the selected input policy.
-        input_policy: Use "native", "rectangle" (RGB), or "rectangle_bgr" (YuNet 2023mar).
+        input_policy: Use "native", "rectangle" (RGB), or a YuNet BGR policy ("rectangle_bgr" or "rectangle_bgr_800").
         nms_threshold:   NMS IoU threshold (default 0.4).
         max_faces:       Maximum faces to detect per image (default 20).
     """
@@ -386,7 +386,8 @@ class FaceX:
         ptr = image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
         if self._input_policy != "native":
             from .yunet import prepare_rectangle
-            canvas, rw, rh = prepare_rectangle(image, bgr=self._input_policy == "rectangle_bgr")
+            side = 800 if self._input_policy == "rectangle_bgr_800" else 640
+            canvas, rw, rh = prepare_rectangle(image, bgr=self._input_policy != "rectangle", side=side)
             ch, cw = canvas.shape[:2]
             n = self._lib.facex_detect_prepared(
                 self._handle, ptr, w, h,

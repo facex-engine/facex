@@ -59,6 +59,10 @@ Alignment and embedding sample the original RGB pixels. Set `score_threshold`
 explicitly to override the calibrated threshold. Existing SDK callers use native
 image dimensions by default.
 
+For small faces use `input_policy="rectangle_bgr_800"`. This raises the pixel
+budget to 800² and uses a calibrated threshold of 0.75. The REST equivalent is
+`FACEX_DETECT_SIZE=800`; the default is 640.
+
 The Docker REST service uses the BGR rectangle policy for `POST /detect` and returns
 up to 32 faces. Mount both weights at the paths above under `/app`, or set
 `EMBED_WEIGHTS` and `DETECT_WEIGHTS` to their paths inside the container.

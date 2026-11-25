@@ -29,6 +29,12 @@ EMBED_WEIGHTS = os.environ.get('EMBED_WEIGHTS', 'weights/edgeface_xs_fp32.bin')
 DETECT_WEIGHTS = os.environ.get('DETECT_WEIGHTS', 'weights/yunet_fp32.bin')
 
 
+DETECT_SIZE = os.environ.get("FACEX_DETECT_SIZE", "640")
+if DETECT_SIZE not in ("640", "800"):
+    raise ValueError("FACEX_DETECT_SIZE must be 640 or 800")
+DETECT_POLICY = "rectangle_bgr_800" if DETECT_SIZE == "800" else "rectangle_bgr"
+
+
 class FaceXProcess:
     """Persistent subprocess for face embedding."""
 
@@ -139,7 +145,7 @@ def detect():
         try:
             if _detector is None:
                 engine = FaceX(embed_weights=EMBED_WEIGHTS, detect_weights=DETECT_WEIGHTS,
-                               input_policy="rectangle_bgr", license_key=os.environ.get("LICENSE_KEY"))
+                               input_policy=DETECT_POLICY, license_key=os.environ.get("LICENSE_KEY"))
                 if engine.backend != "ctypes":
                     raise RuntimeError("Missing native FaceX library")
                 _detector = engine

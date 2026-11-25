@@ -84,6 +84,26 @@ static void conv2d(const float* in, int Ci, int Hi, int Wi,
     for (int co = 0; co < Co; co++)
         for (int oy = 0; oy < Ho; oy++)
             for (int ox = 0; ox < Wo; ox++) {
+#if defined(__AVX2__) && defined(__FMA__)
+                if (K == 3 && s == 2 && pad == 1 && oy > 0 && oy*2 + 1 < Hi &&
+                    ox > 0 && (ox + 7)*2 + 1 < Wi) {
+                    const __m256i offsets = _mm256_setr_epi32(0, 2, 4, 6, 8, 10, 12, 14);
+                    __m256 acc = _mm256_set1_ps(b ? b[co] : 0);
+                    for (int ci = 0; ci < Ci; ci++) {
+                        for (int ky = 0; ky < 3; ky++) {
+                            const float* row = in + (size_t)ci*Hi*Wi + (oy*2 + ky-1)*Wi + ox*2-1;
+                            const float* weights = w + ((size_t)co*Ci + ci)*9 + ky*3;
+                            for (int kx = 0; kx < 3; kx++) {
+                                __m256 pixels = _mm256_i32gather_ps(row + kx, offsets, 4);
+                                acc = _mm256_fmadd_ps(pixels, _mm256_set1_ps(weights[kx]), acc);
+                            }
+                        }
+                    }
+                    _mm256_storeu_ps(out + (size_t)co*Ho*Wo + oy*Wo + ox, acc);
+                    ox += 7;
+                    continue;
+                }
+#endif
                 float sum = b ? b[co] : 0;
                 for (int ci = 0; ci < Ci; ci++)
                     for (int ky = 0; ky < K; ky++)
@@ -111,6 +131,21 @@ static void conv_dw(const float* in, int C, int Hi, int Wi,
             float w20=wc[6],w21=wc[7],w22=wc[8];
             for (int oy = 0; oy < Ho; oy++) {
                 for (int ox = 0; ox < Wo; ox++) {
+#if defined(__AVX2__) && defined(__FMA__)
+                    if (oy > 0 && oy + 1 < Hi && ox > 0 && ox + 8 < Wi) {
+                        __m256 acc = _mm256_set1_ps(bc);
+                        for (int ky = 0; ky < 3; ky++) {
+                            const float* row = inp_c + (oy + ky - 1) * Wi + ox - 1;
+                            for (int kx = 0; kx < 3; kx++) {
+                                acc = _mm256_fmadd_ps(_mm256_loadu_ps(row + kx),
+                                                      _mm256_set1_ps(wc[3*ky + kx]), acc);
+                            }
+                        }
+                        _mm256_storeu_ps(out + (size_t)c*Ho*Wo + oy*Wo + ox, acc);
+                        ox += 7;
+                        continue;
+                    }
+#endif
                     float sum = bc;
                     int iy = oy - 1, ix = ox - 1;
                     /* Unrolled 3×3 with boundary checks */
@@ -149,6 +184,35 @@ static void conv_dw(const float* in, int C, int Hi, int Wi,
 }
 
 static void conv1x1(const float* in, int Ci, int HW, const float* w, const float* b, int Co, float* out) {
+#if defined(__AVX2__) && defined(__FMA__)
+    /* Reuse two input vectors across four output channels. Keep partial
+     * sums in registers until all input channels have been accumulated. */
+    if (Co % 4 == 0 && HW % 16 == 0) {
+        for (int co = 0; co < Co; co += 4) {
+            for (int i = 0; i < HW; i += 16) {
+                __m256 lo[4], hi[4];
+                for (int k = 0; k < 4; k++)
+                    lo[k] = hi[k] = _mm256_set1_ps(b ? b[co + k] : 0);
+                for (int ci = 0; ci < Ci; ci++) {
+                    const float* pixel = in + (size_t)ci * HW + i;
+                    __m256 x = _mm256_loadu_ps(pixel);
+                    __m256 y = _mm256_loadu_ps(pixel + 8);
+                    for (int k = 0; k < 4; k++) {
+                        __m256 weight = _mm256_set1_ps(w[(size_t)(co + k) * Ci + ci]);
+                        lo[k] = _mm256_fmadd_ps(weight, x, lo[k]);
+                        hi[k] = _mm256_fmadd_ps(weight, y, hi[k]);
+                    }
+                }
+                for (int k = 0; k < 4; k++) {
+                    float* dst = out + (size_t)(co + k) * HW + i;
+                    _mm256_storeu_ps(dst, lo[k]);
+                    _mm256_storeu_ps(dst + 8, hi[k]);
+                }
+            }
+        }
+        return;
+    }
+#endif
     /* Initialize output with bias */
     for (int co = 0; co < Co; co++) {
         float bias = b ? b[co] : 0;
