@@ -16,8 +16,6 @@ Usage:
 """
 
 import argparse
-import io
-import struct
 import time
 from pathlib import Path
 
@@ -26,13 +24,14 @@ import torch
 from PIL import Image
 
 from verification_thresholds import fold_metrics
+from verification_curve import verification_curve
+from pair_sampling import sample_index_pairs
 
 import arch as arch_module
 from model import MobileFaceNet
 from dataset import MS1MDataset
 
 DATA_ROOT = Path("D:/apps/facex/training/data/ms1m")
-INDEX = struct.Struct("<QII")
 SEED = 1337
 N_PAIRS_PER_TYPE = 3000        # 3000 same + 3000 diff = 6000 pairs total
 N_FOLDS = 10
@@ -40,41 +39,7 @@ N_FOLDS = 10
 
 def build_pairs(seed: int = SEED, n_per: int = N_PAIRS_PER_TYPE):
     """Build a balanced list of (img_idx_a, img_idx_b, same_label) pairs."""
-    rng = np.random.default_rng(seed)
-    # We need quick lookup of all images per label. Walk the index once.
-    print("Building label -> images map...")
-    blob_path = DATA_ROOT / "blob.jpg.bin"
-    idx_path = DATA_ROOT / "index.bin"
-    idx_mm = np.memmap(idx_path, dtype=np.uint8, mode="r")
-    n = idx_mm.size // 16
-    labels = np.empty(n, dtype=np.int64)
-    for i in range(n):
-        _, _, lbl = INDEX.unpack(idx_mm[i * 16:(i + 1) * 16].tobytes())
-        labels[i] = lbl
-
-    # Bucket images by label
-    by_label = {}
-    for i, lb in enumerate(labels.tolist()):
-        by_label.setdefault(lb, []).append(i)
-    multi = [lb for lb, ix in by_label.items() if len(ix) >= 2]
-    print(f"{n:,} images, {len(by_label):,} classes, {len(multi):,} with >=2 imgs")
-
-    pairs = []
-    # same-pairs
-    same_classes = rng.choice(multi, size=n_per, replace=True)
-    for cls in same_classes:
-        ids = by_label[int(cls)]
-        i, j = rng.choice(ids, size=2, replace=False)
-        pairs.append((int(i), int(j), True))
-    # diff-pairs
-    for _ in range(n_per):
-        c1, c2 = rng.choice(multi, size=2, replace=False)
-        i = int(rng.choice(by_label[int(c1)]))
-        j = int(rng.choice(by_label[int(c2)]))
-        pairs.append((i, j, False))
-    rng.shuffle(pairs)
-    print(f"Built {len(pairs):,} pairs ({n_per:,} same / {n_per:,} diff)")
-    return pairs
+    return sample_index_pairs(DATA_ROOT / "index.bin", seed, n_per)
 
 
 def load_image_chw(ds, idx, size: int = 112):
@@ -136,6 +101,9 @@ def eval_one(arch_name: str, ckpt_path: str, pairs, ds, device: str):
     print(f"  same: mean={same_sims.mean():.4f}  std={same_sims.std():.4f}")
     print(f"  diff: mean={diff_sims.mean():.4f}  std={diff_sims.std():.4f}")
     print(f"  separation gap: {same_sims.mean() - diff_sims.mean():.4f}")
+    curve = verification_curve(sims, issame, target_far=0.001)
+    print(f"  empirical AUC {curve['auc']:.6f}, interpolated EER {curve['interpolated_eer']:.6f}, "
+          f"TAR {curve['tar']:.6f} at {curve['false_accepts']}/{curve['negatives']} false accepts")
     stats = kfold_threshold(sims, issame)
     print(f"  verification accuracy: {stats['acc_mean']*100:.2f}% "
           f"+/- {stats['acc_std']*100:.2f}%  (thr={stats['thr_mean']:.3f})")

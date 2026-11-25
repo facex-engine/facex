@@ -4,6 +4,7 @@ FaceX core module — ctypes binding with subprocess fallback.
 
 import ctypes
 import ctypes.util
+import math
 import os
 import platform
 import struct
@@ -179,17 +180,21 @@ def similarity(emb1: np.ndarray, emb2: np.ndarray) -> float:
     Returns:
         Cosine similarity in [-1, 1]. Values > 0.3 indicate same person.
     """
-    emb1 = np.asarray(emb1, dtype=np.float32).ravel()
-    emb2 = np.asarray(emb2, dtype=np.float32).ravel()
-    if emb1.shape[0] != EMBEDDING_DIM or emb2.shape[0] != EMBEDDING_DIM:
-        raise ValueError(f"Embeddings must be {EMBEDDING_DIM}-dim, "
-                         f"got {emb1.shape[0]} and {emb2.shape[0]}")
-    dot = np.dot(emb1, emb2)
-    norm1 = np.linalg.norm(emb1)
-    norm2 = np.linalg.norm(emb2)
-    if norm1 < 1e-9 or norm2 < 1e-9:
-        return 0.0
-    return float(dot / (norm1 * norm2))
+    vectors = []
+    for embedding in (emb1, emb2):
+        raw = np.asarray(embedding)
+        if raw.size != EMBEDDING_DIM or raw.dtype.kind not in "iuf":
+            raise ValueError("Expected 512 real embedding components")
+        if raw.dtype != np.float32:
+            with np.errstate(over="ignore"):
+                raw = raw.astype(np.float32)
+        vectors.append(raw.ravel().astype(np.float64))
+    a, b = vectors
+    aa, bb = float(np.dot(a, a)), float(np.dot(b, b))
+    if not (math.isfinite(aa) and math.isfinite(bb)):
+        raise ValueError("Embedding contains a nonfinite float32 value")
+    norm = math.sqrt(aa * bb)
+    return min(1., max(-1., float(np.dot(a, b)) / norm)) if norm else 0.
 
 
 # ---------------------------------------------------------------------------

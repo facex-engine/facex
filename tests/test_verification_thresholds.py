@@ -26,6 +26,11 @@ def exhaustive(scores, same, grid, n_folds):
 
 
 class TestThresholds(unittest.TestCase):
+    def test_invalid_grid_and_folds(self):
+        for grid, count in (([], 2), ([1, 0], 2), ([float("nan")], 2), ([0], 1), ([0], 3)):
+            with self.assertRaises(ValueError):
+                fold_metrics([0, 1], [False, True], grid, count)
+
     def test_reference(self):
         rng = np.random.default_rng(275)
         for grid in (np.linspace(0, 1, 401), np.linspace(-0.5, 1, 601)):

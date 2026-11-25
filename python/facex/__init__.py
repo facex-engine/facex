@@ -10,5 +10,7 @@ Usage:
 
 from facex.core import FaceX, similarity
 
+from facex.gallery import Gallery, enrollment_template
+
 __version__ = "0.1.0"
-__all__ = ["FaceX", "similarity"]
+__all__ = ["FaceX", "Gallery", "enrollment_template", "similarity"]

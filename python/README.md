@@ -188,3 +188,26 @@ master. Example inside the REST container:
 ```sh
 gunicorn --preload --worker-class sync --workers 4 --bind 0.0.0.0:8080 preloaded:app
 ```
+
+### Exact gallery search and enrollment
+
+Use a row per identity and keep the row to identity mapping with the matrix.
+The gallery owns a normalized float64 copy. Rebuild it when enrollment changes.
+
+```python
+from facex import Gallery, enrollment_template
+
+template, agreement = enrollment_template(views, weights=qualities)
+gallery = Gallery(enrollment_rows)
+indices, scores = gallery.search(query_rows, k=5)
+decisions = gallery.identify(query_rows, min_score=calibrated_score,
+                            min_margin=calibrated_margin)
+```
+
+A decision of -1 means abstention. A margin requires two enrollment rows.
+Equal best scores always abstain. The optional medoid mode selects an actual
+enrolled view. Agreement ranges from zero to one and measures directional
+consistency. Calibrate decision thresholds on separate data for each checkpoint.
+
+The REST compare endpoint accepts a numeric array or the little-endian
+float32 Base64 string returned by the compact detect endpoint for either input.

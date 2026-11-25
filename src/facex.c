@@ -28,8 +28,6 @@ struct FaceX {
 };
 
 FaceX* facex_init(const char* embed_weights, const char* detect_weights, const char* license_key) {
-    if (license_key) g_license_key = license_key;
-
     FaceX* fx = (FaceX*)calloc(1, sizeof(FaceX));
     if (!fx) return NULL;
 
@@ -40,7 +38,7 @@ FaceX* facex_init(const char* embed_weights, const char* detect_weights, const c
             return NULL;
         }
     }
-    if (embed_weights && engine_init(embed_weights, &fx->embed_weights) != 0) {
+    if (embed_weights && engine_init(embed_weights, &fx->embed_weights, license_key) != 0) {
         if (fx->detector) detect_free(fx->detector);
         free(fx);
         return NULL;

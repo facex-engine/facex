@@ -68,9 +68,7 @@ typedef struct {
     PackedFP32* fp;    /* array, indexed same as tensors */
 } Weights;
 
-static const char* g_license_key = NULL;
-
-static int load_weights(const char* path, Weights* w) {
+static int load_weights(const char* path, Weights* w, const char* license_key) {
     FILE* f = fopen(path, "rb");
     if (!f) return -1;
 
@@ -88,8 +86,8 @@ static int load_weights(const char* path, Weights* w) {
     size_t size = w->raw_size;
 #ifndef NO_CRYPTO
     if (size >= 20 && memcmp(payload, "EFXE", 4) == 0) {
-        if (!g_license_key || !*g_license_key) return -3;
-        int rc = weight_decrypt_inplace(payload, size, g_license_key);
+        if (!license_key || !*license_key) return -3;
+        int rc = weight_decrypt_inplace(payload, size, license_key);
         if (rc) return rc;
         payload += 20;
         size -= 20;
@@ -612,12 +610,11 @@ void convnext_block(float* x_hwc, int H, int W, int C,
                            const PackedFP32* fp2, const PackedFP32* fp3)
 {
     int HW = H * W;
-    float* residual = tmp;
-    float* dw_out = residual + HW * C;
+    /* The skip input stays intact until its own final output element is written. */
+    const float* residual = x_hwc;
+    float* dw_out = tmp;
     float* t1 = dw_out + HW * C;
     float* t2 = t1 + HW * rank;
-
-    memcpy(residual, x_hwc, (size_t)HW * C * sizeof(float));
 
     /* DW Conv: output to dw_out, then use dw_out for LN+MLP (avoids memcpy!) */
     depthwise_conv_nxn_hwc_fp32(x_hwc, H, W, C, dw_w, dw_b, K, dw_out);
@@ -678,28 +675,17 @@ static void edgeface_forward(const float* input_chw, /* [3, 112, 112] */
 {
     _g_weights = weights; /* enable INT8 lookup in matmul_wp */
     /* Static workspace — avoids malloc overhead on every call */
-    static float work[2 * 1024 * 1024]; /* 8MB workspace */
-    static float x_buf[28 * 28 * 192]; /* largest: 784 positions × 192 channels */
+    /* Stage zero has the largest ConvNeXt scratch: HW * (C + rank + hidden).
+     * The largest XCA attention layout at stage one needs 111960 floats. */
+    static float work[784 * (32 + 19 + 128)];
+    static float x_buf[784 * 32];
 
     float* x = x_buf;
 
     /* === STEM: Conv 3→32 4×4 s4 → output directly in HWC === */
     {
-        const float* sw = W(0); /* [32, 3, 4, 4] OIHW */
-        const float* sb = W(1); /* [32] */
-
-        /* Pre-rearrange weights from [co, ci, ky, kx] to [ci, ky, kx, co] (contiguous per co).
-         * This converts strided gather (stride=48) to contiguous load (1 AVX2 op). */
-        static float sw_rearr[3 * 4 * 4 * 32]; /* 6KB — fits in L1 */
-        static int sw_done = 0;
-        if (!sw_done) {
-            for (int ci = 0; ci < 3; ci++)
-                for (int ky = 0; ky < 4; ky++)
-                    for (int kx = 0; kx < 4; kx++)
-                        for (int co = 0; co < 32; co++)
-                            sw_rearr[((ci*16 + ky*4 + kx)*32) + co] = sw[(co*3+ci)*16 + ky*4+kx];
-            sw_done = 1;
-        }
+        const float* sw_rearr = W(0);
+        const float* sb = W(1);
 
         for (int oy = 0; oy < 28; oy++)
             for (int ox = 0; ox < 28; ox++) {
@@ -970,9 +956,9 @@ static void release_weights(Weights* w) {
     memset(w, 0, sizeof(*w));
 }
 
-static int engine_init(const char* weights_path, Weights* weights) {
+static int engine_init(const char* weights_path, Weights* weights, const char* license_key) {
     memset(weights, 0, sizeof(*weights));
-    if (load_weights(weights_path, weights) != 0) {
+    if (load_weights(weights_path, weights, license_key) != 0) {
         fprintf(stderr, "Failed to load %s\n", weights_path);
         goto fail;
     }
@@ -1199,7 +1185,8 @@ static int engine_init(const char* weights_path, Weights* weights) {
     }
 
     /* Reorder downsample conv weights: OIHW [Cout,Cin,K,K] → [Cin*KK, Cout] for AVX2 */
-    if (reorder_conv_weights(weights->tensors[42], 64, 32, 4) ||
+    if (reorder_conv_weights(weights->tensors[0], 32, 3, 16) ||
+        reorder_conv_weights(weights->tensors[42], 64, 32, 4) ||
         reorder_conv_weights(weights->tensors[103], 100, 64, 4) ||
         reorder_conv_weights(weights->tensors[223], 192, 100, 4)) goto fail;
 
@@ -1247,20 +1234,21 @@ fail:
 /* ============ Main ============ */
 #ifndef FACEX_LIB
 int main(int argc, char** argv) {
+    const char* license_key = NULL;
     const char* weights_path = "data/edgeface_xs_fp32.bin";
     if (argc > 1) weights_path = argv[1];
 
     /* Parse --license KEY from args or LICENSE_KEY env */
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp(argv[i], "--license") == 0) {
-            g_license_key = argv[i + 1];
+            license_key = argv[i + 1];
             break;
         }
     }
-    if (!g_license_key) g_license_key = getenv("LICENSE_KEY");
+    if (!license_key) license_key = getenv("LICENSE_KEY");
 
     Weights weights;
-    if (engine_init(weights_path, &weights) != 0) {
+    if (engine_init(weights_path, &weights, license_key) != 0) {
         fprintf(stderr, "Failed to load %s\n", weights_path);
         return 1;
     }

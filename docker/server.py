@@ -13,6 +13,7 @@ Usage:
 
 from contextlib import contextmanager, nullcontext
 import base64
+import binascii
 import os
 import subprocess
 import threading
@@ -21,7 +22,7 @@ import time
 import numpy as np
 from flask import Flask, g, request, jsonify
 from PIL import Image
-from facex import FaceX
+from facex import FaceX, similarity
 
 app = Flask(__name__)
 
@@ -204,14 +205,27 @@ def compare():
     Input: JSON {"emb1": [512], "emb2": [512]}
     Output: {"similarity": float, "match": bool}
     """
-    data = request.get_json()
-    if not data or 'emb1' not in data or 'emb2' not in data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or 'emb1' not in data or 'emb2' not in data:
         return jsonify({'error': 'Need emb1 and emb2'}), 400
 
-    emb1 = np.array(data['emb1'], dtype=np.float32)
-    emb2 = np.array(data['emb2'], dtype=np.float32)
+    def decode(value):
+        if isinstance(value, str):
+            if len(value) != 2732:
+                raise ValueError("Expected 512 base64 encoded float32 components")
+            raw = base64.b64decode(value, validate=True)
+            if len(raw) != 2048:
+                raise ValueError("Expected 2048 embedding bytes")
+            return np.frombuffer(raw, dtype="<f4")
+        if not isinstance(value, list) or len(value) != 512 or any(
+                type(v) not in (int, float) for v in value):
+            raise ValueError("Expected an array of 512 real components")
+        return value
 
-    sim = float(np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2) + 1e-8))
+    try:
+        sim = similarity(decode(data["emb1"]), decode(data["emb2"]))
+    except (ValueError, OverflowError, binascii.Error):
+        return jsonify(error="Invalid embedding"), 400
 
     return jsonify({
         'similarity': round(sim, 6),
