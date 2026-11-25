@@ -67,6 +67,18 @@ _detector = None
 _detector_lock = threading.Lock()
 
 
+def initialize_detector():
+    """Load weights before forking or under the detector lock in a worker."""
+    global _detector
+    if _detector is None:
+        engine = FaceX(embed_weights=EMBED_WEIGHTS, detect_weights=DETECT_WEIGHTS,
+                       input_policy=DETECT_POLICY, min_box_side=MIN_BOX_SIDE,
+                       license_key=os.environ.get("LICENSE_KEY"))
+        if engine.backend != "ctypes":
+            raise RuntimeError("Missing native FaceX library")
+        _detector = engine
+
+
 def get_fx():
     global _fx
     if _fx is None:
@@ -148,16 +160,9 @@ def detect():
         return jsonify({'error': 'Invalid image'}), 400
 
     start = time.perf_counter()
-    global _detector
     with _detector_lock:
         try:
-            if _detector is None:
-                engine = FaceX(embed_weights=EMBED_WEIGHTS, detect_weights=DETECT_WEIGHTS,
-                               input_policy=DETECT_POLICY, min_box_side=MIN_BOX_SIDE,
-                               license_key=os.environ.get("LICENSE_KEY"))
-                if engine.backend != "ctypes":
-                    raise RuntimeError("Missing native FaceX library")
-                _detector = engine
+            initialize_detector()
             faces = _detector.detect(rgb, max_faces=32, embeddings=embeddings)
         except (RuntimeError, OSError):
             app.logger.exception("Face detection failed")

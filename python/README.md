@@ -159,3 +159,32 @@ hard deadline. A zero budget selects the one-pass result. The guided operating
 point uses confidence 0.78, and crops use original-frame coordinates. If
 requested, embeddings are computed only for the retained faces on the source
 RGB image.
+
+### Video and concurrent REST requests
+
+For a camera with upstream tracking, call detection with `embeddings=False`,
+associate the resulting geometry with tracker IDs and pass it to a per-camera
+cache. This optional SDK policy refreshes on first sight, loss, overlap, a
+large change in appearance or position, improved crop quality, low confidence,
+small boxes and at most every 12 frames. Supply every frame, including empty
+frames, and call `reset()` when seeking or reconnecting. Mark uncertain
+associations with `ambiguous=True`. ID switches that the tracker does not
+report can still carry an outdated embedding until the next refresh.
+
+```python
+from facex.video import VideoEmbeddings
+
+cache = VideoEmbeddings(fx, max_age=12)
+# Each entry contains track_id, bbox, score and the five source keypoints.
+results = cache.update(rgb, frame_number, tracked_faces)
+```
+
+On Linux with Gunicorn, start synchronous workers from the preloaded entry
+point to share packed model pages by fork. The model files must be present
+when the master starts. Each process allocates its own inference buffers;
+keep one active inference call per process. To replace weights restart the
+master. Example inside the REST container:
+
+```sh
+gunicorn --preload --worker-class sync --workers 4 --bind 0.0.0.0:8080 preloaded:app
+```

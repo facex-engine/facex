@@ -464,16 +464,27 @@ class FaceX:
             raise ValueError("max_faces must be nonnegative")
         faces = [f for f in faces if f["score"] >= threshold][:min(32, limit)]
         if embeddings:
-            scalar = ctypes.POINTER(ctypes.c_float)
             for face in faces:
-                kps = np.asarray(face["keypoints"], dtype=np.float32)
-                vec = np.empty(512, dtype=np.float32)
-                rc = self._lib.facex_embed_landmarks(self._handle, image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)),
-                                                      w, h, kps.ctypes.data_as(scalar), vec.ctypes.data_as(scalar))
-                if rc < 0:
-                    raise RuntimeError("Failed to embed guided detection")
-                face["embedding"] = vec
+                face["embedding"] = self.embed_landmarks(image, face["keypoints"])
         return faces
+
+    def embed_landmarks(self, image, keypoints):
+        """Align five source landmarks and embed the original RGB crop."""
+        if self.backend != "ctypes" or not hasattr(self._lib, "facex_embed_landmarks"):
+            raise RuntimeError("Landmark embedding requires an updated native library")
+        image = np.ascontiguousarray(image, dtype=np.uint8)
+        points = np.ascontiguousarray(keypoints, dtype=np.float32)
+        if image.ndim != 3 or image.shape[2] != 3 or points.shape != (5, 2) or not np.isfinite(points).all():
+            raise ValueError("Expected an RGB image and five finite landmark pairs")
+        h, w = image.shape[:2]
+        scalar = ctypes.POINTER(ctypes.c_float)
+        vec = np.empty(512, dtype=np.float32)
+        rc = self._lib.facex_embed_landmarks(
+            self._handle, image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), w, h,
+            points.ctypes.data_as(scalar), vec.ctypes.data_as(scalar))
+        if rc < 0:
+            raise RuntimeError("Landmark embedding failed")
+        return vec
 
     def _detect_cli(self, image: np.ndarray, w: int, h: int, max_faces: int) -> List[dict]:
         """Subprocess fallback: pipe image data to CLI and parse output."""

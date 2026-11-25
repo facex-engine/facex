@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=builder /build/facex-cli /app/facex-server
 COPY --from=builder /build/libfacex.so /app/libfacex.so
 COPY python/facex /app/facex
-COPY docker/server.py /app/
+COPY docker/server.py docker/preloaded.py /app/
 ENV FACEX_LIB=/app/libfacex.so
 
 # Weights must be mounted or baked in

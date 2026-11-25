@@ -119,54 +119,57 @@ static void conv2d(const float* in, int Ci, int Hi, int Wi,
             }
 }
 
+static inline void dw_row(const float* inp_c, int Hi, int Wi, const float* wc,
+                          float bc, int oy, float* output) {
+    float w00=wc[0],w01=wc[1],w02=wc[2];
+    float w10=wc[3],w11=wc[4],w12=wc[5];
+    float w20=wc[6],w21=wc[7],w22=wc[8];
+    for (int ox = 0; ox < Wi; ox++) {
+#if defined(__AVX2__) && defined(__FMA__)
+        if (oy > 0 && oy + 1 < Hi && ox > 0 && ox + 8 < Wi) {
+            __m256 acc = _mm256_set1_ps(bc);
+            for (int ky = 0; ky < 3; ky++) {
+                const float* row = inp_c + (oy + ky - 1) * Wi + ox - 1;
+                for (int kx = 0; kx < 3; kx++) {
+                    acc = _mm256_fmadd_ps(_mm256_loadu_ps(row + kx),
+                                          _mm256_set1_ps(wc[3*ky + kx]), acc);
+                }
+            }
+            _mm256_storeu_ps(output + ox, acc);
+            ox += 7;
+            continue;
+        }
+#endif
+        float sum = bc;
+        int iy = oy - 1, ix = ox - 1;
+        /* Unrolled 3×3 with boundary checks */
+        if(iy>=0) {
+            if(ix>=0) sum += inp_c[iy*Wi+ix]*w00;
+            sum += inp_c[iy*Wi+ox]*w01;
+            if(ox+1<Wi) sum += inp_c[iy*Wi+ox+1]*w02;
+        }
+        if(ix>=0) sum += inp_c[oy*Wi+ix]*w10;
+        sum += inp_c[oy*Wi+ox]*w11;
+        if(ox+1<Wi) sum += inp_c[oy*Wi+ox+1]*w12;
+        if(oy+1<Hi) {
+            if(ix>=0) sum += inp_c[(oy+1)*Wi+ix]*w20;
+            sum += inp_c[(oy+1)*Wi+ox]*w21;
+            if(ox+1<Wi) sum += inp_c[(oy+1)*Wi+ox+1]*w22;
+        }
+        output[ox] = sum;
+    }
+}
+
 static void conv_dw(const float* in, int C, int Hi, int Wi,
                     const float* w, const float* b, int K, int s, int pad, float* out) {
     int Ho = (Hi + 2*pad - K) / s + 1, Wo = (Wi + 2*pad - K) / s + 1;
     /* Fast path: K=3, s=1, pad=1 — most common in YuNet */
     if (K == 3 && s == 1 && pad == 1) {
         for (int c = 0; c < C; c++) {
-            const float* inp_c = in + (size_t)c*Hi*Wi;
-            const float* wc = w + (size_t)c*9;
-            float bc = b ? b[c] : 0;
-            float w00=wc[0],w01=wc[1],w02=wc[2];
-            float w10=wc[3],w11=wc[4],w12=wc[5];
-            float w20=wc[6],w21=wc[7],w22=wc[8];
-            for (int oy = 0; oy < Ho; oy++) {
-                for (int ox = 0; ox < Wo; ox++) {
-#if defined(__AVX2__) && defined(__FMA__)
-                    if (oy > 0 && oy + 1 < Hi && ox > 0 && ox + 8 < Wi) {
-                        __m256 acc = _mm256_set1_ps(bc);
-                        for (int ky = 0; ky < 3; ky++) {
-                            const float* row = inp_c + (oy + ky - 1) * Wi + ox - 1;
-                            for (int kx = 0; kx < 3; kx++) {
-                                acc = _mm256_fmadd_ps(_mm256_loadu_ps(row + kx),
-                                                      _mm256_set1_ps(wc[3*ky + kx]), acc);
-                            }
-                        }
-                        _mm256_storeu_ps(out + (size_t)c*Ho*Wo + oy*Wo + ox, acc);
-                        ox += 7;
-                        continue;
-                    }
-#endif
-                    float sum = bc;
-                    int iy = oy - 1, ix = ox - 1;
-                    /* Unrolled 3×3 with boundary checks */
-                    if(iy>=0) {
-                        if(ix>=0) sum += inp_c[iy*Wi+ix]*w00;
-                        sum += inp_c[iy*Wi+ox]*w01;
-                        if(ox+1<Wi) sum += inp_c[iy*Wi+ox+1]*w02;
-                    }
-                    if(ix>=0) sum += inp_c[oy*Wi+ix]*w10;
-                    sum += inp_c[oy*Wi+ox]*w11;
-                    if(ox+1<Wi) sum += inp_c[oy*Wi+ox+1]*w12;
-                    if(oy+1<Hi) {
-                        if(ix>=0) sum += inp_c[(oy+1)*Wi+ix]*w20;
-                        sum += inp_c[(oy+1)*Wi+ox]*w21;
-                        if(ox+1<Wi) sum += inp_c[(oy+1)*Wi+ox+1]*w22;
-                    }
-                    out[(size_t)c*Ho*Wo + oy*Wo + ox] = sum;
-                }
-            }
+            const float* input = in + (size_t)c*Hi*Wi;
+            for (int y = 0; y < Hi; y++)
+                dw_row(input, Hi, Wi, w + c*9, b ? b[c] : 0,
+                       y, out + ((size_t)c*Hi + y)*Wi);
         }
         return;
     }
@@ -183,6 +186,29 @@ static void conv_dw(const float* in, int C, int Hi, int Wi,
                     }
                 out[(size_t)c*Ho*Wo + oy*Wo + ox] = sum;
             }
+}
+
+/* The destination arena has room for pooled output and two full scratch rows. */
+static void dw_relu_pool(const float* in, int C, int H, int W, const float* weights,
+                         const float* bias, float* out) {
+    int ph = H/2, pw = W/2;
+    float* first = out + (size_t)C*ph*pw;
+    float* second = first + W;
+    for (int c = 0; c < C; c++) {
+        const float* src = in + (size_t)c*H*W;
+        for (int y = 0; y < ph; y++) {
+            dw_row(src,H,W,weights+c*9,bias[c],2*y,first);
+            dw_row(src,H,W,weights+c*9,bias[c],2*y+1,second);
+            float* dst = out + ((size_t)c*ph+y)*pw;
+            for (int x = 0; x < pw; x++) {
+                float m = first[2*x];
+                if (first[2*x+1] > m) m = first[2*x+1];
+                if (second[2*x] > m) m = second[2*x];
+                if (second[2*x+1] > m) m = second[2*x+1];
+                dst[x] = m < 0 ? 0 : m;
+            }
+        }
+    }
 }
 
 static void conv1x1(const float* in, int Ci, int HW, const float* w, const float* b, int Co, float* out) {
@@ -239,6 +265,34 @@ static void conv1x1(const float* in, int Ci, int HW, const float* w, const float
 #endif
             for (; i < HW; i++) orow[i] += wt * in_ch[i];
         }
+    }
+}
+
+/* Evaluate the pointwise projection only in the 3x3 neighborhood used
+ * by an accepted location's depthwise output. */
+static void sparse_head(const float* feat, int H, int W, int y, int x,
+                        int channels, const float* pw, const float* pb,
+                        const float* dw, const float* db, float* out) {
+    int hw = H*W;
+    for (int co = 0; co < channels; co++) {
+        float sum = db[co];
+        for (int ky = 0; ky < 3; ky++) {
+            int iy = y+ky-1;
+            if (iy < 0 || iy >= H) continue;
+            for (int kx = 0; kx < 3; kx++) {
+                int ix = x+kx-1;
+                if (ix < 0 || ix >= W) continue;
+                float projected = pb[co];
+                for (int ci = 0; ci < 64; ci++)
+#if defined(__FMA__)
+                    projected = fmaf(feat[(size_t)ci*hw + iy*W + ix], pw[co*64+ci], projected);
+#else
+                    projected += feat[(size_t)ci*hw + iy*W + ix] * pw[co*64+ci];
+#endif
+                sum += projected * dw[co*9+ky*3+kx];
+            }
+        }
+        out[(size_t)co*hw + y*W+x] = sum;
     }
 }
 
@@ -348,9 +402,10 @@ int detect_run_threshold(Detect* det, const uint8_t* rgb_hwc, int width, int hei
     conv1x1(a, 16, h2*w2, T(33), T(32), 16, b);
 
     /* model0: DW3×3 + ReLU + MaxPool */
-    conv_dw(b, 16, h2, w2, T(2), T(3), 3, 1, 1, a);
-    relu_(a, 16*h2*w2);
-    maxpool2x2(a, 16, h2, w2, b); /* → [16, h4, w4] */
+    dw_relu_pool(b, 16, h2, w2, T(2), T(3), a);
+    float* swap = a;
+    a = b;
+    b = swap;
 
     /* model1: PW(16→16) + DW+ReLU + PW(16→32) */
     conv1x1(b, 16, h4*w4, T(35), T(34), 16, a);
@@ -464,19 +519,31 @@ int detect_run_threshold(Detect* det, const uint8_t* rgb_hwc, int width, int hei
         conv_dw(a, 1, fh, fw, T(ow2[si]), T(ob2[si]), 3, 1, 1, c);
         float* obj = c;
 
-        /* bbox: PW(64→4) + DW3×3(4) */
-        conv1x1(feat, 64, hw, T(bw1[si]), T(bb1[si]), 4, a);
-        conv_dw(a, 4, fh, fw, T(bw2[si]), T(bb2[si]), 3, 1, 1, hd);
+        int active = 0;
+        for (int i = 0; i < hw; i++) {
+            cls[i] = sqrtf(sigm(cls[i]) * sigm(obj[i]));
+            if (cls[i] >= threshold) active++;
+        }
+        if (!active) continue;
+        int sparse = active <= hw/128;
+        if (!sparse) {
+            /* bbox: PW(64→4) + DW3×3(4) */
+            conv1x1(feat, 64, hw, T(bw1[si]), T(bb1[si]), 4, a);
+            conv_dw(a, 4, fh, fw, T(bw2[si]), T(bb2[si]), 3, 1, 1, hd);
 
-        /* kps: PW(64→10) + DW3×3(10) */
-        conv1x1(feat, 64, hw, T(kw1[si]), T(kb1[si]), 10, a);
-        conv_dw(a, 10, fh, fw, T(kw2[si]), T(kb2[si]), 3, 1, 1, hd + 4*hw);
+            /* kps: PW(64→10) + DW3×3(10) */
+            conv1x1(feat, 64, hw, T(kw1[si]), T(kb1[si]), 10, a);
+            conv_dw(a, 10, fh, fw, T(kw2[si]), T(kb2[si]), 3, 1, 1, hd + 4*hw);
+        }
 
         for (int gy = 0; gy < fh; gy++)
             for (int gx = 0; gx < fw; gx++) {
                 int idx = gy * fw + gx;
-                float sc = sqrtf(sigm(cls[idx]) * sigm(obj[idx]));
+                float sc = cls[idx];
                 if (sc < threshold) continue;
+                if (sparse)
+                    sparse_head(feat, fh, fw, gy, gx, 4, T(bw1[si]), T(bb1[si]),
+                                T(bw2[si]), T(bb2[si]), hd);
                 /* YuNet regresses the center offset and log width/height. */
                 float cx = (gx + hd[idx]) * st;
                 float cy = (gy + hd[hw + idx]) * st;
@@ -494,6 +561,9 @@ int detect_run_threshold(Detect* det, const uint8_t* rgb_hwc, int width, int hei
                 float aspect = bw / (bh + 1e-6f);
                 if (aspect < 0.3f || aspect > 3.0f) continue; /* bad aspect ratio */
                 candidates[nf].score = sc;
+                if (sparse)
+                    sparse_head(feat, fh, fw, gy, gx, 10, T(kw1[si]), T(kb1[si]),
+                                T(kw2[si]), T(kb2[si]), hd + 4*hw);
                 for (int k = 0; k < 5; k++) {
                     candidates[nf].kps[k*2]   = fmaxf(0, fminf((float)width,  (gx + hd[(4+k*2)*hw+idx]) * st));
                     candidates[nf].kps[k*2+1] = fmaxf(0, fminf((float)height, (gy + hd[(4+k*2+1)*hw+idx]) * st));
