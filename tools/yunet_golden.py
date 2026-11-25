@@ -72,35 +72,22 @@ def decode_anchor_free(outputs, strides=(8, 16, 32), input_size=160,
     for s in strides:
         feat_h = input_size // s
         feat_w = input_size // s
-        # Skip levels where the input doesn't map cleanly (e.g. 160/32 = 5)
-        # YuNet outputs are sized for 640x640; for 160x160 we get 20/10/5 cells
-        # per side. We slice the first feat_h*feat_w rows.
         n_cells = feat_h * feat_w
-        cls_s = cls[s][:n_cells]
-        obj_s = obj[s][:n_cells]
-        bbox_s = bbox[s][:n_cells]
-        kps_s = kps[s][:n_cells]
-        # Sigmoid both: classification * objectness
-        # ONNX outputs are pre-sigmoid for cls and obj per opencv_zoo's YuNet
-        score_s = 1.0 / (1.0 + np.exp(-cls_s)) * 1.0 / (1.0 + np.exp(-obj_s))
-        for idx in range(n_cells):
-            sc = float(score_s[idx, 0])
-            if sc < score_thresh:
-                continue
-            cy_idx = idx // feat_w
-            cx_idx = idx % feat_w
-            cx = (cx_idx + 0.5) * s
-            cy = (cy_idx + 0.5) * s
-            # bbox = [l, t, r, b] offsets to grid center
-            l, t, r, b = bbox_s[idx]
-            x1 = cx - l * s
-            y1 = cy - t * s
-            x2 = cx + r * s
-            y2 = cy + b * s
-            kp = kps_s[idx].copy()
-            for k in range(kps_count):
-                kp[k * 2]     = cx + kp[k * 2]     * s
-                kp[k * 2 + 1] = cy + kp[k * 2 + 1] * s
+        if len(cls[s]) != n_cells:
+            raise ValueError(f"stride {s} output does not match input size {input_size}")
+        # ONNX emits probabilities. The native head applies its sigmoid in C.
+        scores = np.sqrt(np.clip(cls[s] * obj[s], 0, 1)).ravel()
+        for idx in np.flatnonzero(scores >= score_thresh):
+            sc = float(scores[idx])
+            gy, gx = divmod(int(idx), feat_w)
+            offset_x, offset_y, log_w, log_h = bbox[s][idx]
+            cx, cy = (gx + offset_x) * s, (gy + offset_y) * s
+            w, h = np.exp(log_w) * s, np.exp(log_h) * s
+            x1, y1 = cx - w/2, cy - h/2
+            x2, y2 = cx + w/2, cy + h/2
+            kp = kps[s][idx].copy()
+            kp[0::2] = (gx + kp[0::2]) * s
+            kp[1::2] = (gy + kp[1::2]) * s
             faces.append((x1, y1, x2, y2, sc, kp.tolist()))
     return faces
 
@@ -141,7 +128,19 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    sess = ort.InferenceSession(args.onnx_path, providers=["CPUExecutionProvider"])
+    if args.input_size <= 0 or args.input_size % 32:
+        ap.error("--input-size must be a positive multiple of 32")
+    # Public YuNet declares fixed spatial dimensions despite using convolutions
+    # throughout. Set the reference graph to the same resolution as the C run.
+    import onnx
+    model = onnx.load(args.onnx_path)
+    dims = model.graph.input[0].type.tensor_type.shape.dim
+    for dim in dims[2:4]:
+        dim.dim_value = args.input_size
+    for output in model.graph.output:
+        stride = int(output.name.rsplit("_", 1)[1])
+        output.type.tensor_type.shape.dim[1].dim_value = (args.input_size // stride) ** 2
+    sess = ort.InferenceSession(model.SerializeToString(), providers=["CPUExecutionProvider"])
     out_names = [o.name for o in sess.get_outputs()]
     print(f"Loaded {args.onnx_path}")
     print(f"Outputs: {out_names}")

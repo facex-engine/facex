@@ -7,6 +7,7 @@
 
 #include "detect.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,9 +74,6 @@ Detect* detect_init(const char* weights_path) {
         det->tensors[i] = (float*)(det->raw + off); off += sz;
     }
 
-    det->work_size = 4 * 1024 * 1024;
-    det->work = (float*)calloc(det->work_size, sizeof(float));
-    if (!det->work) { free(det->raw); free(det); return NULL; }
     return det;
 }
 
@@ -234,10 +232,24 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
     if (!det || !rgb_hwc || !out || max_faces < 0) return -1;
     if (width <= 0 || height <= 0) return -1;
 
-    int H = height, W = width;
+    if (max_faces == 0) return 0;
+    /* The feature pyramid halves five times. Pad the bottom and right so
+     * both sides of every lateral addition share a spatial shape. */
+    if (height > INT_MAX - 31 || width > INT_MAX - 31) return -1;
+    int H = (height + 31) / 32 * 32, W = (width + 31) / 32 * 32;
+    if (W > INT_MAX / 16 / H) return -1;
     int h2=H/2, w2=W/2, h4=h2/2, w4=w2/2, h8=h4/2, w8=w4/2, h16=h8/2, w16=w8/2, h32=h16/2, w32=w16/2;
 
     /* Workspace layout: dedicated buffers */
+    uint64_t needed = (uint64_t)3*H*W + (uint64_t)3*64*h2*w2
+                  + (size_t)80*h8*w8 + (size_t)64*h16*w16 + (size_t)64*h32*w32;
+    if (needed > SIZE_MAX / sizeof(float)) return -1;
+    if (needed > det->work_size) {
+        float *work = realloc(det->work, needed * sizeof(float));
+        if (!work) return -1;
+        det->work = work;
+        det->work_size = needed;
+    }
     float* wp = det->work;
     float* inp  = wp; wp += 3*H*W;
     float* a    = wp; wp += 64*h2*w2;
@@ -249,10 +261,11 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
     float* hd   = wp; wp += 16*h8*w8;    /* head scratch */
 
     /* uint8 HWC → float32 CHW [0..255] */
-    for (int y = 0; y < H; y++)
-        for (int x = 0; x < W; x++)
+    if (W != width || H != height) memset(inp, 0, (size_t)3*H*W*sizeof(*inp));
+    for (int y = 0; y < height; y++)
+        for (int x = 0; x < width; x++)
             for (int ch = 0; ch < 3; ch++)
-                inp[(size_t)ch*H*W + y*W + x] = (float)rgb_hwc[(y*W+x)*3 + ch];
+                inp[(size_t)ch*H*W + y*W + x] = (float)rgb_hwc[((size_t)y*width+x)*3 + ch];
 
     /* Stem: Conv3×3 s2 (3→16) + ReLU + PW(16→16) */
     conv2d(inp, 3, H, W, T(0), T(1), 16, 3, 2, 1, a);
@@ -341,6 +354,10 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
     memcpy(f8, a, 64*h8*w8*sizeof(float));
 
     /* === HEADS + DECODE === */
+    size_t anchors = (size_t)h8*w8 + (size_t)h16*w16 + (size_t)h32*w32;
+    if (anchors == 0) return 0;
+    DetectFace *candidates = malloc(anchors * sizeof(*candidates));
+    if (!candidates) return -1;
     int nf = 0;
     struct { float* feat; int fh, fw, stride; } levels[3] = {
         {f8, h8, w8, 8}, {f16, h16, w16, 16}, {f32_, h32, w32, 32}
@@ -380,63 +397,70 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
         conv1x1(feat, 64, hw, T(kw1[si]), T(kb1[si]), 10, a);
         conv_dw(a, 10, fh, fw, T(kw2[si]), T(kb2[si]), 3, 1, 1, hd + 4*hw);
 
-        for (int gy = 0; gy < fh && nf < max_faces; gy++)
-            for (int gx = 0; gx < fw && nf < max_faces; gx++) {
+        for (int gy = 0; gy < fh; gy++)
+            for (int gx = 0; gx < fw; gx++) {
                 int idx = gy * fw + gx;
-                float sc = sigm(cls[idx]) * sigm(obj[idx]);
+                float sc = sqrtf(sigm(cls[idx]) * sigm(obj[idx]));
                 if (sc < det->score_threshold) continue;
-                float cx = (gx + 0.5f) * st, cy = (gy + 0.5f) * st;
-                out[nf].x1 = fmaxf(0, cx - hd[0*hw+idx] * st);
-                out[nf].y1 = fmaxf(0, cy - hd[1*hw+idx] * st);
-                out[nf].x2 = fminf((float)width, cx + hd[2*hw+idx] * st);
-                out[nf].y2 = fminf((float)height, cy + hd[3*hw+idx] * st);
+                /* YuNet regresses the center offset and log width/height. */
+                float cx = (gx + hd[idx]) * st;
+                float cy = (gy + hd[hw + idx]) * st;
+                float half_w = 0.5f * expf(hd[2*hw + idx]) * st;
+                float half_h = 0.5f * expf(hd[3*hw + idx]) * st;
+                candidates[nf].x1 = fmaxf(0, cx - half_w);
+                candidates[nf].y1 = fmaxf(0, cy - half_h);
+                candidates[nf].x2 = fminf((float)width, cx + half_w);
+                candidates[nf].y2 = fminf((float)height, cy + half_h);
                 /* Filter degenerate boxes */
-                float bw = out[nf].x2 - out[nf].x1;
-                float bh = out[nf].y2 - out[nf].y1;
+                float bw = candidates[nf].x2 - candidates[nf].x1;
+                float bh = candidates[nf].y2 - candidates[nf].y1;
                 if (bw < 16 || bh < 16) continue;         /* too small */
                 if (bw > width*0.95f || bh > height*0.95f) continue; /* too large */
                 float aspect = bw / (bh + 1e-6f);
                 if (aspect < 0.3f || aspect > 3.0f) continue; /* bad aspect ratio */
-                out[nf].score = sc;
+                candidates[nf].score = sc;
                 for (int k = 0; k < 5; k++) {
-                    out[nf].kps[k*2]   = fmaxf(0, fminf((float)width,  cx + hd[(4+k*2)*hw+idx] * st));
-                    out[nf].kps[k*2+1] = fmaxf(0, fminf((float)height, cy + hd[(4+k*2+1)*hw+idx] * st));
+                    candidates[nf].kps[k*2]   = fmaxf(0, fminf((float)width,  (gx + hd[(4+k*2)*hw+idx]) * st));
+                    candidates[nf].kps[k*2+1] = fmaxf(0, fminf((float)height, (gy + hd[(4+k*2+1)*hw+idx]) * st));
                 }
                 nf++;
             }
     }
-    if (nf > 1) nf = nms_sort(out, nf, det->nms_threshold);
+    if (nf > 1) nf = nms_sort(candidates, nf, det->nms_threshold);
 
     /* Cross-scale merge: if two faces have nose keypoints within 20px,
      * keep only the one with better score. This handles multi-scale
      * detections of the same face at different strides. */
     if (nf > 1) {
         for (int i = 0; i < nf; i++) {
-            if (out[i].score < 0) continue; /* already merged */
+            if (candidates[i].score < 0) continue; /* already merged */
             for (int j = i + 1; j < nf; j++) {
-                if (out[j].score < 0) continue;
+                if (candidates[j].score < 0) continue;
                 /* Compare nose keypoints (index 4,5) */
-                float dx = out[i].kps[4] - out[j].kps[4];
-                float dy = out[i].kps[5] - out[j].kps[5];
+                float dx = candidates[i].kps[4] - candidates[j].kps[4];
+                float dy = candidates[i].kps[5] - candidates[j].kps[5];
                 float dist = sqrtf(dx*dx + dy*dy);
                 /* Also compare eye midpoints */
-                float ei_x = (out[i].kps[0] + out[i].kps[2]) * 0.5f;
-                float ei_y = (out[i].kps[1] + out[i].kps[3]) * 0.5f;
-                float ej_x = (out[j].kps[0] + out[j].kps[2]) * 0.5f;
-                float ej_y = (out[j].kps[1] + out[j].kps[3]) * 0.5f;
+                float ei_x = (candidates[i].kps[0] + candidates[i].kps[2]) * 0.5f;
+                float ei_y = (candidates[i].kps[1] + candidates[i].kps[3]) * 0.5f;
+                float ej_x = (candidates[j].kps[0] + candidates[j].kps[2]) * 0.5f;
+                float ej_y = (candidates[j].kps[1] + candidates[j].kps[3]) * 0.5f;
                 float eye_dist = sqrtf((ei_x-ej_x)*(ei_x-ej_x) + (ei_y-ej_y)*(ei_y-ej_y));
                 if (dist < 25.0f || eye_dist < 20.0f) {
-                    out[j].score = -1; /* suppress */
+                    candidates[j].score = -1; /* suppress */
                 }
             }
         }
         /* Compact */
         int k = 0;
         for (int i = 0; i < nf; i++)
-            if (out[i].score > 0) { if (k != i) out[k] = out[i]; k++; }
+            if (candidates[i].score > 0) { if (k != i) candidates[k] = candidates[i]; k++; }
         nf = k;
     }
 
+    if (nf > max_faces) nf = max_faces;
+    memcpy(out, candidates, (size_t)nf * sizeof(*out));
+    free(candidates);
     return nf;
 }
 

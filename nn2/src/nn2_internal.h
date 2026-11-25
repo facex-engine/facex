@@ -8,6 +8,18 @@
 #include "nn2.h"
 #include <stddef.h>
 
+typedef struct {
+    float score;
+    int has_motion;
+    int roi_x1, roi_y1, roi_x2, roi_y2;
+} MotionResult;
+
+MotionResult nn2_motion_detect_phase(const uint8_t* prev, const uint8_t* curr,
+                                     int width, int height, int pixel_thresh,
+                                     float score_thresh, unsigned phase);
+MotionResult nn2_motion_detect(const uint8_t* prev, const uint8_t* curr,
+                               int width, int height, int pixel_thresh, float score_thresh);
+
 /* ============ GEMM config ============ */
 #define NN2_MR 6
 #define NN2_NR 16

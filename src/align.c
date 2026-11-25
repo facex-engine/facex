@@ -13,7 +13,7 @@
  */
 
 #include <math.h>
-#include <string.h>
+#include <float.h>
 #include <stdint.h>
 
 /* Reference 112×112 landmarks (ArcFace order) */
@@ -34,80 +34,29 @@ static const float REF_KPS[10] = {
  *
  * Returns: M[6] = {a, -b, tx, b, a, ty}
  */
-static void estimate_similarity_transform(const float src[10], const float dst[10], float M[6]) {
-    /* Solve for [a, b, tx, ty] using normal equations:
-     * For each point pair (sx,sy) -> (dx,dy):
-     *   dx = a*sx - b*sy + tx
-     *   dy = b*sx + a*sy + ty
-     */
-    float sx_sum = 0, sy_sum = 0, dx_sum = 0, dy_sum = 0;
-    float sxsx = 0, sysy = 0, sxsy = 0;
-    float sxdx = 0, sydx = 0, sxdy = 0, sydy = 0;
-    int n = 5;
-
+static void estimate_similarity_transform(const float src[10], const float dst[10], double M[6]) {
+    const int n = 5;
+    double sx_m = 0, sy_m = 0, dx_m = 0, dy_m = 0;
     for (int i = 0; i < n; i++) {
-        float sx = src[i*2], sy = src[i*2+1];
-        float dx = dst[i*2], dy = dst[i*2+1];
-        sx_sum += sx; sy_sum += sy;
-        dx_sum += dx; dy_sum += dy;
-        sxsx += sx*sx; sysy += sy*sy; sxsy += sx*sy;
-        sxdx += sx*dx; sydx += sy*dx;
-        sxdy += sx*dy; sydy += sy*dy;
+        sx_m += src[2*i]; sy_m += src[2*i+1];
+        dx_m += dst[2*i]; dy_m += dst[2*i+1];
     }
-
-    /* Normal equations for similarity transform:
-     * [sum(sx²+sy²)  0             sum(sx) -sum(sy)] [a ]   [sum(sx*dx + sy*dy)]
-     * [0             sum(sx²+sy²)  sum(sy)  sum(sx)] [b ]   [sum(sx*dy - sy*dx)]
-     * [sum(sx)       sum(sy)       n        0      ] [tx] = [sum(dx)           ]
-     * [-sum(sy)      sum(sx)       0        n      ] [ty]   [sum(dy)           ]
-     *
-     * Simplified: solve 2×2 for (a,b), then get (tx,ty)
-     */
-    float ss = sxsx + sysy;
-    float rhs_a = sxdx + sydy;
-    float rhs_b = sxdy - sydx;
-
-    /* [ss    0   sx_sum -sy_sum] [a]   [rhs_a ]
-     * [0     ss  sy_sum  sx_sum] [b] = [rhs_b ]
-     * [sx    sy  n       0     ] [tx]  [dx_sum]
-     * [-sy   sx  0       n     ] [ty]  [dy_sum] */
-
-    /* From rows 3,4: tx = (dx_sum - a*sx_sum + b*sy_sum) / n
-     *                ty = (dy_sum - b*sx_sum - a*sy_sum) / n
-     * Substitute into rows 1,2:
-     * a*(ss - (sx_sum²+sy_sum²)/n) + 0*b = rhs_a - (sx_sum*dx_sum+sy_sum*dy_sum)/n
-     * 0*a + b*(ss - (sx_sum²+sy_sum²)/n) = rhs_b - (sy_sum*dx_sum-sx_sum*dy_sum)/n ... actually not quite.
-     * Easier: just solve directly. */
-
-    float A00 = ss, A02 = sx_sum, A03 = -sy_sum;
-    float A12 = sy_sum, A13 = sx_sum;
-    float b0 = rhs_a, b1 = rhs_b;
-    float b2 = dx_sum, b3 = dy_sum;
-
-    /* Eliminate tx,ty from first two equations using last two */
-    /* a*ss + tx*sx - ty*sy = rhs_a  ... (1)
-     * b*ss + tx*sy + ty*sx = rhs_b  ... (2)
-     * a*sx + b*sy + tx*n = dx       ... (3) → tx = (dx - a*sx - b*sy)/n
-     * -a*sy + b*sx + ty*n = dy      ... (4) → ty = (dy + a*sy - b*sx)/n  */
-    /* Hmm, let me just use the simple form. */
-
-    float sx_m = sx_sum / n, sy_m = sy_sum / n;
-    float dx_m = dx_sum / n, dy_m = dy_sum / n;
+    sx_m /= n; sy_m /= n; dx_m /= n; dy_m /= n;
 
     /* Center the points */
-    float num_a = 0, num_b = 0, denom = 0;
+    double num_a = 0, num_b = 0, denom = 0;
     for (int i = 0; i < n; i++) {
-        float sx = src[i*2] - sx_m, sy = src[i*2+1] - sy_m;
-        float dx = dst[i*2] - dx_m, dy = dst[i*2+1] - dy_m;
+        double sx = src[i*2] - sx_m, sy = src[i*2+1] - sy_m;
+        double dx = dst[i*2] - dx_m, dy = dst[i*2+1] - dy_m;
         num_a += sx*dx + sy*dy;
         num_b += sx*dy - sy*dx;
         denom += sx*sx + sy*sy;
     }
 
-    float a = num_a / denom;
-    float b = num_b / denom;
-    float tx = dx_m - a*sx_m + b*sy_m;
-    float ty = dy_m - b*sx_m - a*sy_m;
+    double a = denom > 0 ? num_a / denom : 0;
+    double b = denom > 0 ? num_b / denom : 0;
+    double tx = dx_m - a*sx_m + b*sy_m;
+    double ty = dy_m - b*sx_m - a*sy_m;
 
     M[0] = a;  M[1] = -b; M[2] = tx;
     M[3] = b;  M[4] = a;  M[5] = ty;
@@ -121,56 +70,48 @@ static void estimate_similarity_transform(const float src[10], const float dst[1
  * kps:      5 detected keypoints [x0,y0,x1,y1,...,x4,y4]
  * out_f32:  output 112×112×3 float32 HWC [-1, 1]
  */
-void align_face(const uint8_t* src_rgb, int src_w, int src_h,
+int align_face(const uint8_t* src_rgb, int src_w, int src_h,
                 const float kps[10], float* out_f32) {
-    float M[6];
+    double M[6];
     /* We want: dst_point = M * src_point
      * But for warping we need inverse: for each dst pixel, find src pixel.
      * So compute M: detected_kps → reference_kps, then invert. */
     estimate_similarity_transform(kps, REF_KPS, M);
 
-    /* Invert 2×2 part: [a -b]^-1 = 1/(a²+b²) * [a  b]
-     *                  [b  a]                     [-b a] */
-    float a = M[0], b = M[3], tx = M[2], ty = M[5];
-    float det = a*a + b*b;
-    float ia = a / det, ib = -b / det;
-    float itx = -(ia*tx + (-ib)*ty);
-    float ity = -(ib*tx + ia*ty);
-    /* Inverse: for dst pixel (dx,dy) → src pixel (sx,sy):
-     * sx = ia*dx + (-ib)*dy + itx
-     * sy = ib*dx + ia*dy + ity */
-
+    double a = M[0], b = M[3], det = a*a + b*b;
+    if (!(det > 0) || !isfinite(det)) {
+        for (int i = 0; i < 112*112*3; i++) out_f32[i] = -1.0f;
+        return 0;
+    }
+    double u = a / det, v = b / det;
+    /* Stabilize integer grid boundaries against roundoff in the inverse. */
+    double grid_eps = 64 * DBL_EPSILON * fmax(src_w, src_h);
     for (int dy = 0; dy < 112; dy++) {
-        for (int dx = 0; dx < 112; dx++) {
-            float sx = ia*dx - ib*dy + itx;  /* wait, ib = -b/det, so -ib = b/det */
-            float sy_f = (b/det)*dx + ia*dy + ity;
-            /* Actually let me redo properly */
-            /* Forward: [a -b tx] maps src→dst. Inverse maps dst→src.
-             * inv = [a/(a²+b²)   b/(a²+b²)   -(a*tx+b*ty)/(a²+b²) ]
-             *       [-b/(a²+b²)  a/(a²+b²)   (b*tx-a*ty)/(a²+b²)  ] */
-            float inv_a = a/det, inv_b = b/det;
-            sx = inv_a * dx + inv_b * dy + (-(a*tx + b*ty))/det;  /* Hmm getting messy */
-            /* Start over with clean inverse */
-            sx = (a*(dx - tx) + b*(dy - ty)) / det;
-            sy_f = (-b*(dx - tx) + a*(dy - ty)) / det;
-
+        double sx = -u * M[2] + v * (dy - M[5]) + grid_eps;
+        double sy_f = v * M[2] + u * (dy - M[5]) + grid_eps;
+        for (int dx = 0; dx < 112; dx++, sx += u, sy_f -= v) {
+            if (!(sx >= 0 && sx < src_w && sy_f >= 0 && sy_f < src_h)) {
+                for (int c = 0; c < 3; c++) out_f32[(dy*112 + dx)*3 + c] = -1.0f;
+                continue;
+            }
             /* Bilinear interpolation */
-            int ix = (int)floorf(sx), iy = (int)floorf(sy_f);
+            int ix = (int)sx, iy = (int)sy_f;
             float fx = sx - ix, fy = sy_f - iy;
 
             for (int c = 0; c < 3; c++) {
                 float v = 0;
-                if (ix >= 0 && ix < src_w-1 && iy >= 0 && iy < src_h-1) {
+                if (ix < src_w-1 && iy < src_h-1) {
                     float v00 = src_rgb[(iy*src_w + ix)*3 + c];
                     float v10 = src_rgb[(iy*src_w + ix+1)*3 + c];
                     float v01 = src_rgb[((iy+1)*src_w + ix)*3 + c];
                     float v11 = src_rgb[((iy+1)*src_w + ix+1)*3 + c];
                     v = v00*(1-fx)*(1-fy) + v10*fx*(1-fy) + v01*(1-fx)*fy + v11*fx*fy;
-                } else if (ix >= 0 && ix < src_w && iy >= 0 && iy < src_h) {
+                } else {
                     v = src_rgb[(iy*src_w + ix)*3 + c];
                 }
                 out_f32[(dy*112 + dx)*3 + c] = v / 127.5f - 1.0f;  /* normalize to [-1, 1] */
             }
         }
     }
+    return 1;
 }

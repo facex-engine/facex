@@ -203,6 +203,12 @@ static void load_conv(MfnConv *c, int c_in, int c_out, int k, int stride,
 }
 
 
+/* ============ Output Hout from Conv spec ============ */
+static int conv_hout(const MfnConv *c, int Hin)
+{
+    return (Hin + 2 * c->padding - c->kernel) / c->stride + 1;
+}
+
 /* ============ Public init ============ */
 
 int mfn_engine_init(const char *path, MfnEngine *e)
@@ -360,8 +366,8 @@ int mfn_engine_init(const char *path, MfnEngine *e)
      */
     int H = MFN_INPUT_HW;
     int max_floats = 0;
-    /* After stem: floor((112 - stem_k) / stem_stride) + 1 */
-    int Hcur = (H - e->arch.stem_kernel) / e->arch.stem_stride + 1;
+    /* Include the same padding used by the forward convolution. */
+    int Hcur = conv_hout(&e->stem, H);
     int Ccur = e->arch.stem_channels;
     int blk_idx = 0;
     int stage_c_in = e->arch.stem_channels;
@@ -431,10 +437,12 @@ static inline float hsum256(__m256 v) {
 }
 #endif
 
+static void prelu_nchw(float *x, int C, int HW, const float *slope);
+
 /* 1x1 conv: y[co, hw] = sum_ci w[co, ci] * x[ci, hw] + b[co]
  * Most of MFN compute is here. We tile over output channels (4 at a
  * time) and use AVX2 along the spatial dim. */
-static void conv2d_1x1_nchw(const float *x, const MfnConv *c,
+static void conv2d_1x1_prelu_nchw(const float *x, const MfnConv *c,
                             int H, int W, float *y)
 {
     int Cin = c->c_in, Cout = c->c_out;
@@ -444,8 +452,43 @@ static void conv2d_1x1_nchw(const float *x, const MfnConv *c,
     const float *bias = c->b;
 
 #ifdef __AVX2__
+    /* Reuse two spatial vectors across four independent output channels. */
+    int co = 0;
+    for (; co + 4 <= Cout && HW >= 16; co += 4) {
+        for (int tile = 0; tile < HW; tile += 16) {
+            /* A partial final tile reuses a few output positions; each is
+             * recomputed from bias, so overlap needs no scratch or mask. */
+            int pos = tile <= HW - 16 ? tile : HW - 16;
+            __m256 lo[4], hi[4];
+            for (int j = 0; j < 4; j++)
+                lo[j] = hi[j] = _mm256_set1_ps(bias[co + j]);
+            for (int ci = 0; ci < Cin; ci++) {
+                const float *in = x + (size_t)ci * HW + pos;
+                __m256 left = _mm256_loadu_ps(in);
+                __m256 right = _mm256_loadu_ps(in + 8);
+                for (int j = 0; j < 4; j++) {
+                    __m256 weight = _mm256_set1_ps(W_[(co + j) * Cin + ci]);
+                    lo[j] = _mm256_fmadd_ps(weight, left, lo[j]);
+                    hi[j] = _mm256_fmadd_ps(weight, right, hi[j]);
+                }
+            }
+            for (int j = 0; j < 4; j++) {
+                float *out = y + (size_t)(co + j) * HW + pos;
+                if (c->prelu) {
+                    __m256 slope = _mm256_set1_ps(c->prelu[co + j]);
+                    __m256 zero = _mm256_setzero_ps();
+                    lo[j] = _mm256_blendv_ps(lo[j], _mm256_mul_ps(lo[j], slope),
+                                             _mm256_cmp_ps(lo[j], zero, _CMP_LT_OQ));
+                    hi[j] = _mm256_blendv_ps(hi[j], _mm256_mul_ps(hi[j], slope),
+                                             _mm256_cmp_ps(hi[j], zero, _CMP_LT_OQ));
+                }
+                _mm256_storeu_ps(out, lo[j]);
+                _mm256_storeu_ps(out + 8, hi[j]);
+            }
+        }
+    }
     /* Process 1 Cout at a time, vectorize along HW. */
-    for (int co = 0; co < Cout; co++) {
+    for (; co < Cout; co++) {
         float bi = bias[co];
         float *yc = y + (size_t)co * HW;
         /* init with bias */
@@ -466,6 +509,7 @@ static void conv2d_1x1_nchw(const float *x, const MfnConv *c,
             }
             for (; i < HW; i++) yc[i] += wv * xc[i];
         }
+        if (c->prelu) prelu_nchw(yc, 1, HW, c->prelu + co);
     }
 #else
     for (int co = 0; co < Cout; co++) {
@@ -475,6 +519,7 @@ static void conv2d_1x1_nchw(const float *x, const MfnConv *c,
             float wv = W_[co * Cin + ci];
             for (int hw = 0; hw < HW; hw++) y[co * HW + hw] += wv * x[ci * HW + hw];
         }
+        if (c->prelu) prelu_nchw(y + (size_t)co * HW, 1, HW, c->prelu + co);
     }
 #endif
 }
@@ -530,6 +575,32 @@ static void conv2d_dw3x3_nchw(const float *x, const MfnConv *c,
                     _mm256_storeu_ps(out + ox, acc);
                 }
             }
+            if (S == 2 && oy > 0 && 2 * oy + 1 < Hin && Wout >= 10) {
+                const __m256i offsets = _mm256_setr_epi32(0, 2, 4, 6, 8, 10, 12, 14);
+                out[0] = dw3x3_pixel(xc, kw, bi, Hin, Win, 2 * oy - 1, -1);
+                for (ox = 1; 2 * (ox + 7) + 1 < Win; ox += 8) {
+                    __m256 acc = _mm256_set1_ps(bi);
+                    for (int ky = 0; ky < 3; ky++) {
+                        const float *row = xc + (size_t)(2 * oy + ky - 1) * Win + 2 * ox - 1;
+                        for (int kx = 0; kx < 3; kx++)
+                            acc = _mm256_fmadd_ps(_mm256_i32gather_ps(row + kx, offsets, 4),
+                                                  _mm256_set1_ps(kw[3 * ky + kx]), acc);
+                    }
+                    _mm256_storeu_ps(out + ox, acc);
+                }
+            }
+            if (S == 1 && Win == 7 && oy > 0 && oy + 1 < Hin) {
+                out[0] = dw3x3_pixel(xc, kw, bi, Hin, Win, oy - 1, -1);
+                __m128 acc = _mm_set1_ps(bi);
+                for (int ky = 0; ky < 3; ky++) {
+                    const float *row = xc + (size_t)(oy + ky - 1) * Win;
+                    for (int kx = 0; kx < 3; kx++)
+                        acc = _mm_fmadd_ps(_mm_loadu_ps(row + kx),
+                                           _mm_set1_ps(kw[3 * ky + kx]), acc);
+                }
+                _mm_storeu_ps(out + 1, acc);
+                ox = 5;
+            }
 #endif
             for (; ox < Wout; ox++)
                 out[ox] = dw3x3_pixel(xc, kw, bi, Hin, Win, oy * S - 1, ox * S - 1);
@@ -576,10 +647,6 @@ static void conv2d_nchw(const float *x, const MfnConv *c,
                         int Hin, int Win, float *y)
 {
     /* Fast paths */
-    if (c->kernel == 1 && c->stride == 1 && c->padding == 0 && c->groups == 1) {
-        conv2d_1x1_nchw(x, c, Hin, Win, y);
-        return;
-    }
     if (c->kernel == 3 && c->padding == 1 && c->groups == c->c_in
         && c->c_in == c->c_out) {
         conv2d_dw3x3_nchw(x, c, Hin, Win, y);
@@ -668,16 +735,14 @@ static void add_inplace(float *y, const float *x, size_t n)
 }
 
 
-/* ============ Output Hout from Conv spec ============ */
-static int conv_hout(const MfnConv *c, int Hin)
-{
-    return (Hin + 2 * c->padding - c->kernel) / c->stride + 1;
-}
-
 /* ============ Run one Conv (+ optional PReLU) ============ */
 static int run_conv(const float *x, const MfnConv *c, int Hin, int Win,
                      float *y)
 {
+    if (c->kernel == 1 && c->stride == 1 && c->padding == 0 && c->groups == 1) {
+        conv2d_1x1_prelu_nchw(x, c, Hin, Win, y);
+        return Hin;
+    }
     conv2d_nchw(x, c, Hin, Win, y);
     int Hout = conv_hout(c, Hin);
     int Wout = conv_hout(c, Win);

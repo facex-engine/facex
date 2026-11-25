@@ -18,7 +18,7 @@
 #include "edgeface_engine.c"
 
 /* External: alignment */
-extern void align_face(const uint8_t* src_rgb, int src_w, int src_h,
+extern int align_face(const uint8_t* src_rgb, int src_w, int src_h,
                        const float kps[10], float* out_f32);
 
 struct FaceX {
@@ -77,7 +77,10 @@ int facex_detect(FaceX* fx, const uint8_t* rgb_hwc, int width, int height,
 
         /* Align face to 112×112 using keypoints */
         float aligned[112 * 112 * 3];
-        align_face(rgb_hwc, width, height, det_faces[i].kps, aligned);
+        if (!align_face(rgb_hwc, width, height, det_faces[i].kps, aligned)) {
+            memset(out[i].embedding, 0, sizeof(out[i].embedding));
+            continue;
+        }
 
         /* Compute embedding */
         facex_embed(fx, aligned, out[i].embedding);
@@ -100,14 +103,14 @@ int facex_embed(FaceX* fx, const float* rgb_hwc, float embedding[512]) {
 }
 
 float facex_similarity(const float emb1[512], const float emb2[512]) {
-    float dot = 0, n1 = 0, n2 = 0;
+    double dot = 0, n1 = 0, n2 = 0;
     for (int i = 0; i < 512; i++) {
-        dot += emb1[i] * emb2[i];
-        n1 += emb1[i] * emb1[i];
-        n2 += emb2[i] * emb2[i];
+        double a = emb1[i], b = emb2[i];
+        dot += a * b;
+        n1 += a * a;
+        n2 += b * b;
     }
-    float denom = sqrtf(n1) * sqrtf(n2);
-    return denom > 1e-8f ? dot / denom : 0.0f;
+    return n1 > 0 && n2 > 0 ? (float)(dot / sqrt(n1 * n2)) : 0.0f;
 }
 
 void facex_free(FaceX* fx) {

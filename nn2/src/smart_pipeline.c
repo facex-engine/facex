@@ -27,18 +27,15 @@ static double sp_now(void) {
     LARGE_INTEGER t; QueryPerformanceCounter(&t);
     return (double)t.QuadPart/(double)freq.QuadPart;
 }
+#else
+#include <time.h>
+static double sp_now(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
 #endif
 
-/* From motion_gate.c */
-typedef struct {
-    float score;
-    int   has_motion;
-    int   roi_x1, roi_y1, roi_x2, roi_y2;
-} MotionResult;
-
-extern MotionResult nn2_motion_detect(const uint8_t* prev, const uint8_t* curr,
-                                       int width, int height,
-                                       int pixel_thresh, float score_thresh);
 extern void nn2_crop_roi(const uint8_t* src, int src_w, int src_h,
                           int x1, int y1, int x2, int y2,
                           uint8_t* dst, int* dst_w, int* dst_h);
@@ -109,8 +106,8 @@ static FrameResult smart_process_frame(
     /* Step 1: Motion gate */
     if (cam->prev_frame) {
         double t0 = sp_now();
-        MotionResult mr = nn2_motion_detect(cam->prev_frame, frame,
-                                             width, height, 25, 0.003f);
+        MotionResult mr = nn2_motion_detect_phase(cam->prev_frame, frame,
+                                             width, height, 25, 0.003f, (unsigned)cam->frame_count);
         res.inference_ms = (float)((sp_now() - t0) * 1000.0);
 
         if (!mr.has_motion) {

@@ -16,7 +16,8 @@
 /* Kalman state: [cx, cy, s, r, vx, vy, vs] where s=area, r=aspect ratio */
 typedef struct {
     float x[7];    /* state: cx, cy, s, r, vx, vy, vs */
-    float P[7];    /* diagonal of covariance (simplified) */
+    float cross_xy[2];   /* Cov(position, velocity) on each image axis. */
+    float P[7];          /* Marginal variances of the state coordinates. */
     int id;
     int cls;
     float score;
@@ -63,7 +64,13 @@ static void kf_predict(KalmanTrack* t)
     t->x[2] += t->x[6]; /* s += vs */
     if (t->x[2] < 0) t->x[2] = 0;
     /* Increase uncertainty */
-    for (int i = 0; i < 7; i++) t->P[i] += 10.0f;
+    for (int i = 0; i < 2; i++) {
+        t->P[i] += 2 * t->cross_xy[i] + t->P[4+i] + 0.05f;
+        t->cross_xy[i] += t->P[4+i];
+        t->P[4+i] += 0.01f;
+    }
+    t->P[2] += 10;
+    t->P[3] += 10;
     t->age++;
     t->time_since_update++;
 }
@@ -71,17 +78,26 @@ static void kf_predict(KalmanTrack* t)
 /* Kalman update with measurement z[4] = [cx, cy, s, r] */
 static void kf_update(KalmanTrack* t, const float z[4])
 {
-    /* Simplified Kalman gain: K = P / (P + R) */
+    /* Update the center and its velocity from the same innovation. */
     float R = 10.0f; /* measurement noise */
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 2; i++) {
+        float residual = z[i] - t->x[i];
+        float variance = t->P[i] + 1.0f;
+        float kp = t->P[i] / variance;
+        float kv = t->cross_xy[i] / variance;
+        t->x[i] += kp * residual;
+        t->x[4+i] += kv * residual;
+        t->P[4+i] -= kv * t->cross_xy[i];
+        t->cross_xy[i] *= 1 - kp;
+        t->P[i] *= 1 - kp;
+    }
+    for (int i = 2; i < 4; i++) {
         float K = t->P[i] / (t->P[i] + R);
         t->x[i] += K * (z[i] - t->x[i]);
         t->P[i] *= (1.0f - K);
     }
-    /* Update velocities: exponential moving average of residuals */
+    /* Area retains the existing smoothed velocity estimate. */
     float alpha = 0.3f;
-    t->x[4] = (1-alpha) * t->x[4] + alpha * (z[0] - t->x[0]);
-    t->x[5] = (1-alpha) * t->x[5] + alpha * (z[1] - t->x[1]);
     t->x[6] = (1-alpha) * t->x[6] + alpha * (z[2] - t->x[2]);
 
     t->time_since_update = 0;

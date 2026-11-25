@@ -51,9 +51,17 @@ facex-encrypt$(EXT): src/weight_crypto.c
 	$(CC) $(CFLAGS) -DWEIGHT_CRYPTO_MAIN -o $@ $< $(LDFLAGS)
 
 .PHONY: check
-check: kernel-test$(EXT) mfn-depthwise-test$(EXT)
+check: kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT)
 	./kernel-test$(EXT)
 	./mfn-depthwise-test$(EXT)
+	./geometry-test$(EXT)
+	./motion-phase-test$(EXT)
+
+motion-phase-test$(EXT): tests/motion_phase.c nn2/src/motion_gate.c nn2/src/nn2_internal.h nn2/include/nn2.h
+	$(CC) $(CFLAGS) -Inn2/src -Inn2/include -o $@ tests/motion_phase.c nn2/src/motion_gate.c
+
+geometry-test$(EXT): tests/geometry_math.c libfacex.a
+	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
 
 mfn-depthwise-test$(EXT): tests/mfn_depthwise.c src/facex_mfn.c include/facex_mfn.h
 	$(CC) $(CFLAGS) -Iinclude -o $@ $< $(LDFLAGS)
@@ -98,4 +106,4 @@ libdetect.a: detect.o
 	$(AR) rcs $@ $^
 
 clean:
-	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) *.o $(LIBOBJ:.o=.d)
+	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT) *.o $(LIBOBJ:.o=.d)

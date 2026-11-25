@@ -4,8 +4,7 @@
  * Compares current frame vs previous frame using Sum of Absolute Differences.
  * If fewer than threshold pixels changed significantly → no motion → skip inference.
  *
- * AVX-512 SAD: processes 64 bytes (pixels) per cycle.
- * For 320×320×3 = 307,200 bytes: ~4800 iterations = ~2μs at 2.7GHz.
+ * Each phase samples one pixel per 4x4 cell.
  *
  * Returns: motion score (0.0 = identical, 1.0 = completely different)
  *          and bounding box of motion region for ROI-crop.
@@ -15,70 +14,28 @@
 #include <string.h>
 #include <stdlib.h>
 
-#ifdef __AVX512BW__
-#include <immintrin.h>
-#endif
-
-/* Motion detection result */
-typedef struct {
-    float score;        /* 0.0-1.0: fraction of changed pixels */
-    int   has_motion;   /* 1 if score > threshold */
-    int   roi_x1, roi_y1, roi_x2, roi_y2;  /* bounding box of motion region */
-} MotionResult;
-
 /* Compute frame difference score + motion ROI.
  * prev, curr: RGB HWC uint8, width*height*3 bytes.
  * pixel_thresh: per-pixel change threshold (e.g., 25 = ~10% of 255)
  * score_thresh: fraction of changed pixels to trigger motion (e.g., 0.005 = 0.5%)
  */
-MotionResult nn2_motion_detect(const uint8_t* prev, const uint8_t* curr,
+MotionResult nn2_motion_detect_phase(const uint8_t* prev, const uint8_t* curr,
                                 int width, int height,
-                                int pixel_thresh, float score_thresh)
+                                int pixel_thresh, float score_thresh, unsigned phase)
 {
     MotionResult r = {0};
-    int total_pixels = width * height;
+    if (width <= 0 || height <= 0) return r;
     int changed = 0;
 
     /* Track motion bounding box */
     int min_x = width, min_y = height, max_x = 0, max_y = 0;
 
-    /* Downsampled check: compare every 4th pixel for speed */
-    int stride = 4;
-
-#ifdef __AVX512BW__
-    /* AVX-512 path: process 16 pixels at a time (48 bytes RGB) */
-    /* Simplified: compare grayscale approximation (R+G+B)/3 per pixel */
-    for (int y = 0; y < height; y += stride) {
-        const uint8_t* p = prev + y * width * 3;
-        const uint8_t* c = curr + y * width * 3;
-        for (int x = 0; x + 16 <= width; x += 16) {
-            /* Quick SAD on raw bytes (3 channels interleaved) */
-            int off = x * 3;
-            __m512i vp = _mm512_loadu_si512((__m512i*)(p + off));
-            __m512i vc = _mm512_loadu_si512((__m512i*)(c + off));
-            /* Absolute difference per byte */
-            __m512i vd = _mm512_abs_epi8(_mm512_sub_epi8(
-                _mm512_max_epu8(vp, vc), _mm512_min_epu8(vp, vc)));
-            /* Actually use SAD: sum of abs diff in groups of 8 bytes */
-            /* Simpler: check if any byte > threshold using mask */
-            __mmask64 mask = _mm512_cmpgt_epu8_mask(vd, _mm512_set1_epi8((char)pixel_thresh));
-            if (mask) {
-                /* Count changed pixels (each pixel = 3 bytes, any channel > thresh counts) */
-                int bits = __builtin_popcountll(mask);
-                changed += bits / 3 + 1; /* approximate */
-                /* Update ROI */
-                if (x < min_x) min_x = x;
-                if (x + 16 > max_x) max_x = x + 16;
-                if (y < min_y) min_y = y;
-                if (y + stride > max_y) max_y = y + stride;
-            }
-        }
-    }
-#else
-    /* Scalar fallback */
-    for (int y = 0; y < height; y += stride) {
-        for (int x = 0; x < width; x += stride) {
-            int off = (y * width + x) * 3;
+    const int stride = 4;
+    int x_start = phase % 4, y_start = (phase / 4) % 4;
+    if (x_start >= width || y_start >= height) return r;
+    for (int y = y_start; y < height; y += stride) {
+        for (int x = x_start; x < width; x += stride) {
+            size_t off = ((size_t)y * width + x) * 3;
             int d = abs((int)prev[off] - (int)curr[off])
                   + abs((int)prev[off+1] - (int)curr[off+1])
                   + abs((int)prev[off+2] - (int)curr[off+2]);
@@ -91,9 +48,9 @@ MotionResult nn2_motion_detect(const uint8_t* prev, const uint8_t* curr,
             }
         }
     }
-#endif
-
-    int checked = (total_pixels / (stride * stride)) + 1;
+    int sampled_w = 1 + (width - 1 - x_start) / stride;
+    int sampled_h = 1 + (height - 1 - y_start) / stride;
+    size_t checked = (size_t)sampled_w * sampled_h;
     r.score = (float)changed / (float)checked;
     r.has_motion = (r.score > score_thresh) ? 1 : 0;
 
@@ -116,6 +73,12 @@ MotionResult nn2_motion_detect(const uint8_t* prev, const uint8_t* curr,
     }
 
     return r;
+}
+
+MotionResult nn2_motion_detect(const uint8_t* prev, const uint8_t* curr,
+                               int width, int height, int pixel_thresh, float score_thresh)
+{
+    return nn2_motion_detect_phase(prev, curr, width, height, pixel_thresh, score_thresh, 0);
 }
 
 /* ============ ROI Crop ============ */
