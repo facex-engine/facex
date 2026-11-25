@@ -49,3 +49,15 @@ We compared against abc177f in six alternating pairs of local bursts on four pin
 | p95 response time in ms | 333 | 267 |
 
 Across 384 requests per build, 39 succeeded before and 37 after. All accepted face results matched their sequential references. The measured benefit is less wasted work under overload. A synchronous single-request worker has no competing in-process decodes.
+
+## Single request frame preparation
+
+RGB uploads now go directly from the Pillow decoder to NumPy. A three-channel uint8 input that already has the detector's target dimensions skips the resize. BGR packing copies one channel at a time into the padded output.
+
+On one pinned Linux CPU we tested complete Flask requests for four fixture images resized and encoded as JPEGs at each resolution. We alternated old and new order for 16 timed pairs per resolution after one warmup pair. The medians below are client-thread CPU time in milliseconds, including the full response with embeddings. Every returned box, score, landmark and embedding matched the previous implementation. These local requests exclude external network delay.
+
+| JPEG resolution | Before | After |
+|---|---:|---:|
+| 640 by 640 | 47.34 | 43.91 |
+| 1920 by 1080 | 74.63 | 72.49 |
+| 3840 by 2160 | 166.53 | 154.17 |

@@ -240,7 +240,7 @@ def detect():
     with preparation_slot(_detect_capacity):
         try:
             with Image.open(request.files['file'].stream) as uploaded:
-                rgb = np.asarray(uploaded.convert('RGB'))
+                rgb = np.asarray(uploaded if uploaded.mode == 'RGB' else uploaded.convert('RGB'))
         except (OSError, ValueError, Image.DecompressionBombError):
             return jsonify({'error': 'Invalid image'}), 400
 

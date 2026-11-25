@@ -20,9 +20,17 @@ def prepare_rectangle(image, *, bgr=False, side=640):
     rw, rh, cw, ch = rectangle_shape(w, h, side=side)
     x, y = (cw - rw) // 2, (ch - rh) // 2
     canvas = np.zeros((ch, cw, 3), dtype=np.uint8)
-    bicubic = getattr(Image, "Resampling", Image).BICUBIC
-    pixels = np.asarray(Image.fromarray(image).resize((rw, rh), bicubic))
-    canvas[y:y + rh, x:x + rw] = pixels[:, :, ::-1] if bgr else pixels
+    if (rw, rh) == (w, h) and image.dtype == np.uint8 and image.shape[2:] == (3,):
+        pixels = image
+    else:
+        bicubic = getattr(Image, "Resampling", Image).BICUBIC
+        pixels = np.asarray(Image.fromarray(image).resize((rw, rh), bicubic))
+    region = canvas[y:y + rh, x:x + rw]
+    if bgr and pixels.shape[2:] == (3,):
+        for channel in range(3):
+            region[:, :, channel] = pixels[:, :, 2 - channel]
+    else:
+        region[:] = pixels[:, :, ::-1] if bgr else pixels
     return canvas, rw, rh
 
 
