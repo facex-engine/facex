@@ -35,3 +35,17 @@ The Flask worker allows 250 ms by default from handler entry to starting inferen
 To include time already spent uploading or waiting at a proxy or a synchronous Gunicorn worker, clients can send `X-FaceX-Deadline-Ms` with the absolute Unix time in milliseconds after which processing the frame is no longer useful. This requires synchronized clocks. The earlier deadline applies. The worker checks expiration before accessing the multipart body and again before model execution. Queues outside Flask can still delay delivery of the 503 response.
 
 In a local 64-request burst with 32 clients, one threaded Flask process and eight real JPEGs, unlimited admission returned 64 successful responses with p95 1767 ms. A 250 ms budget admitted 10 (p95 313 ms) and rejected 54 (p95 253 ms). All admitted responses matched their image's sequential result. A subsequent request completed normally. These are WSGI timings for a single burst.
+
+## Limit decoded images during overload
+
+For requests with a deadline, after multipart parsing each process allows up to two requests per inference endpoint to prepare an image or use the engine. This leaves room to decode the next image while the model is busy. Waiting for preparation and waiting for the model share the original deadline. Expiration in the first queue skips image decoding. Requests with unlimited admission keep the original preprocessing path.
+
+We compared against abc177f in six alternating pairs of local bursts on four pinned logical CPUs. Each burst used one warmed threaded Flask process, 32 clients and 64 detection requests drawn from eight fixture JPEGs resized to 1920 by 1080. The local admission budget was 250 ms. CPU includes the in-process test client. Latency includes successful and rejected responses.
+
+| Median per burst | Before | After |
+|---|---:|---:|
+| JPEGs opened for decoding | 64 | 10.5 |
+| Process CPU seconds | 2.135 | 0.764 |
+| p95 response time in ms | 333 | 267 |
+
+Across 384 requests per build, 39 succeeded before and 37 after. All accepted face results matched their sequential references. The measured benefit is less wasted work under overload. A synchronous single-request worker has no competing in-process decodes.

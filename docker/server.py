@@ -11,7 +11,7 @@ Usage:
   gunicorn -w 2 -b 0.0.0.0:8080 server:app
 """
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import base64
 import os
 import subprocess
@@ -72,6 +72,9 @@ _fx = None
 _embed_lock = threading.Lock()
 _detector = None
 _detector_lock = threading.Lock()
+# One image can be prepared while the preceding image is inside each model.
+_detect_capacity = threading.BoundedSemaphore(2)
+_embed_capacity = threading.BoundedSemaphore(2)
 
 
 QUEUE_WAIT_MS = int(os.environ.get("FACEX_QUEUE_WAIT_MS", "250"))
@@ -127,6 +130,12 @@ def inference_slot(lock):
         lock.release()
 
 
+def preparation_slot(capacity):
+    if g.inference_deadline is None:
+        return nullcontext()
+    return inference_slot(capacity)
+
+
 def initialize_detector():
     """Load weights before forking or under the detector lock in a worker."""
     global _detector
@@ -169,17 +178,18 @@ def embed():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
-    f = request.files['file']
-    img = Image.open(f.stream).convert('RGB').resize((112, 112))
-    arr = np.array(img, dtype=np.float32) / 127.5 - 1.0  # normalize to [-1, 1]
+    with preparation_slot(_embed_capacity):
+        f = request.files['file']
+        img = Image.open(f.stream).convert('RGB').resize((112, 112))
+        arr = np.array(img, dtype=np.float32) / 127.5 - 1.0  # normalize to [-1, 1]
 
-    t0 = time.time()
-    try:
-        emb = embed_in_worker(arr)
-    except OSError:
-        app.logger.exception("Embedding worker failed")
-        return jsonify({"error": "Face embedding unavailable"}), 503
-    ms = (time.time() - t0) * 1000
+        t0 = time.time()
+        try:
+            emb = embed_in_worker(arr)
+        except OSError:
+            app.logger.exception("Embedding worker failed")
+            return jsonify({"error": "Face embedding unavailable"}), 503
+        ms = (time.time() - t0) * 1000
 
     return jsonify({
         'embedding': emb.tolist(),
@@ -227,21 +237,22 @@ def detect():
     if encoding not in ("array", "base64_f32le"):
         return jsonify({"error": "embedding_format must be array or base64_f32le"}), 400
 
-    try:
-        with Image.open(request.files['file'].stream) as uploaded:
-            rgb = np.asarray(uploaded.convert('RGB'))
-    except (OSError, ValueError, Image.DecompressionBombError):
-        return jsonify({'error': 'Invalid image'}), 400
-
-    start = time.perf_counter()
-    with inference_slot(_detector_lock):
+    with preparation_slot(_detect_capacity):
         try:
-            initialize_detector()
-            check_inference_deadline()
-            faces = _detector.detect(rgb, max_faces=32, embeddings=embeddings)
-        except (RuntimeError, OSError):
-            app.logger.exception("Face detection failed")
-            return jsonify({'error': 'Face detection unavailable'}), 503
+            with Image.open(request.files['file'].stream) as uploaded:
+                rgb = np.asarray(uploaded.convert('RGB'))
+        except (OSError, ValueError, Image.DecompressionBombError):
+            return jsonify({'error': 'Invalid image'}), 400
+
+        start = time.perf_counter()
+        with inference_slot(_detector_lock):
+            try:
+                initialize_detector()
+                check_inference_deadline()
+                faces = _detector.detect(rgb, max_faces=32, embeddings=embeddings)
+            except (RuntimeError, OSError):
+                app.logger.exception("Face detection failed")
+                return jsonify({'error': 'Face detection unavailable'}), 503
     if embeddings:
         for face in faces:
             vector = face["embedding"]

@@ -34,6 +34,16 @@ class AdmissionTest(unittest.TestCase):
                 self.assertEqual(self.post(endpoint, future).status_code, 200)
                 self.assertEqual(len(engine.method_calls), 1)
 
+    def test_full_preparation_capacity_skips_image_decode(self):
+        for endpoint, slots in (("/detect", server._detect_capacity),
+                                ("/embed", server._embed_capacity)):
+            with slots, slots, patch.object(server, "QUEUE_WAIT_MS", 20):
+                with patch.object(server.Image, "open") as open_image:
+                    response = self.post(endpoint)
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json["code"], "inference_busy")
+                open_image.assert_not_called()
+
     def test_client_deadline_with_no_server_limit(self):
         with patch.object(server, "QUEUE_WAIT_MS", 0), server._detector_lock:
             deadline = str(time.time_ns() // 1_000_000 + 30)
