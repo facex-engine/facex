@@ -13,11 +13,11 @@ def _macro(events, labels):
     return float(np.mean(np.bincount(group, weights=events) / np.bincount(group)))
 
 
-def evaluate(enrollment, enrolled_ids, probes, probe_ids, min_score, min_margin, independent=False):
+def validate_labels(enrollment, enrolled_ids, probe_count, probe_ids):
     enrolled_ids, probe_ids = np.asarray(enrolled_ids), np.asarray(probe_ids)
     if enrolled_ids.ndim != 1 or len(enrolled_ids) != len(enrollment):
         raise ValueError("Need one identity per enrollment row")
-    if probe_ids.ndim != 1 or len(probe_ids) != len(probes):
+    if probe_ids.ndim != 1 or len(probe_ids) != probe_count:
         raise ValueError("Need one identity per probe")
     kind = enrolled_ids.dtype.kind
     if not ((kind in "iu" and probe_ids.dtype.kind == kind) or
@@ -28,23 +28,33 @@ def evaluate(enrollment, enrolled_ids, probes, probe_ids, min_score, min_margin,
     known = np.isin(probe_ids, enrolled_ids)
     if not known.any() or known.all():
         raise ValueError("Need both enrolled and unenrolled probes")
-    decisions = CompactGallery(enrollment).identify(probes, min_score=min_score, min_margin=min_margin)
+    return enrolled_ids, probe_ids
+
+
+def decision_metrics(enrolled_ids, labels, decisions, independent=False):
+    known = np.isin(labels, enrolled_ids)
     accepted = decisions >= 0
-    correct = np.zeros(len(probes), dtype=bool)
-    correct[accepted] = enrolled_ids[decisions[accepted]] == probe_ids[accepted]
+    correct = np.zeros(len(labels), dtype=bool)
+    correct[accepted] = enrolled_ids[decisions[accepted]] == labels[accepted]
     unknown = ~known
     errors = int(accepted[unknown].sum())
     count = int(unknown.sum())
-    result = dict(gallery_size=len(enrollment), min_score=min_score, min_margin=min_margin,
-                  unknown_probes=count, false_identifications=errors, fpir=errors/count,
-                  macro_fpir=_macro(accepted[unknown], probe_ids[unknown]),
+    result = dict(unknown_probes=count, false_identifications=errors, fpir=errors/count,
+                  macro_fpir=_macro(accepted[unknown], labels[unknown]),
                   known_probes=int(known.sum()), correct_identifications=int(correct.sum()),
                   known_rejected=int((known & ~accepted).sum()),
                   known_misidentified=int((known & accepted & ~correct).sum()),
-                  fnir=float((~correct[known]).mean()), macro_fnir=_macro(~correct[known],probe_ids[known]))
+                  fnir=float((~correct[known]).mean()), macro_fnir=_macro(~correct[known], labels[known]))
     if independent and errors == 0:
         result["zero_false_id_upper95"] = -math.expm1(math.log(.05)/count)
     return result
+
+
+def evaluate(enrollment, enrolled_ids, probes, probe_ids, min_score, min_margin, independent=False):
+    enrolled_ids, labels = validate_labels(enrollment, enrolled_ids, len(probes), probe_ids)
+    decisions = CompactGallery(enrollment).identify(probes, min_score=min_score, min_margin=min_margin)
+    result = decision_metrics(enrolled_ids, labels, decisions, independent)
+    return dict(result, gallery_size=len(enrollment), min_score=min_score, min_margin=min_margin)
 
 
 if __name__ == "__main__":
