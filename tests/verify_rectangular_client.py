@@ -20,11 +20,11 @@ def main():
     lib.detect_init.restype = ctypes.c_void_p
     det = ctypes.c_void_p(lib.detect_init(os.fsencode(os.environ["DETECT_WEIGHTS"])))
     assert det
-    lib.detect_set_score_threshold(det, ctypes.c_float(.58))
+    lib.detect_set_score_threshold(det, ctypes.c_float(.70))
     lib.align_face.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
                                ctypes.c_void_p, ctypes.c_void_p]
     sdk = FaceX(embed_weights=os.environ["EMBED_WEIGHTS"], detect_weights=os.environ["DETECT_WEIGHTS"],
-                input_policy="rectangle")
+                input_policy="rectangle_bgr")
     client = app.test_client()
     patch = Image.open(ROOT / "data/test_face.jpg").convert("RGB").resize((241, 241))
     try:
@@ -34,7 +34,7 @@ def main():
             rgb = np.asarray(image)
             canvas, rw, rh = prepare_rectangle(rgb)
             ch, cw = canvas.shape[:2]
-            expected = native_run(lib, det, canvas)
+            expected = native_run(lib, det, np.ascontiguousarray(canvas[:, :, ::-1]))
             faces = sdk.detect(rgb)
             assert len(expected) == len(faces) > 0
             for row, face in zip(expected, faces):

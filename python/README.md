@@ -46,18 +46,20 @@ Install the image extra for Pillow and build the shared library from this versio
 ```python
 fx = FaceX(embed_weights="weights/edgeface_xs_fp32.bin",
            detect_weights="weights/yunet_fp32.bin",
-           input_policy="rectangle")
+           input_policy="rectangle_bgr")
 faces = fx.detect(image)
 ```
 
-The detector uses up to 409600 input pixels and a default score threshold of 0.58.
+Pass RGB images to the SDK. The detector receives BGR internally and uses up to
+409600 input pixels with a calibrated score threshold of 0.70. The previous
+RGB rectangle policy remains available as `input_policy="rectangle"` at 0.58.
 For a 1920 × 1080 source it resizes to 832 × 468 and centers that image on an
 832 × 480 canvas. Boxes and five keypoints use original image coordinates.
 Alignment and embedding sample the original RGB pixels. Set `score_threshold`
 explicitly to override the calibrated threshold. Existing SDK callers use native
 image dimensions by default.
 
-The Docker REST service uses the rectangle policy for `POST /detect` and returns
+The Docker REST service uses the BGR rectangle policy for `POST /detect` and returns
 up to 32 faces. Mount both weights at the paths above under `/app`, or set
 `EMBED_WEIGHTS` and `DETECT_WEIGHTS` to their paths inside the container.
 

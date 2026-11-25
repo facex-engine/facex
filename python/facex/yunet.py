@@ -13,11 +13,12 @@ def rectangle_shape(w, h):
     return rw, rh, (rw + 31) // 32 * 32, (rh + 31) // 32 * 32
 
 
-def prepare_rectangle(image):
+def prepare_rectangle(image, *, bgr=False):
     h, w = image.shape[:2]
     rw, rh, cw, ch = rectangle_shape(w, h)
     x, y = (cw - rw) // 2, (ch - rh) // 2
     canvas = np.zeros((ch, cw, 3), dtype=np.uint8)
     bicubic = getattr(Image, "Resampling", Image).BICUBIC
-    canvas[y:y + rh, x:x + rw] = Image.fromarray(image).resize((rw, rh), bicubic)
+    pixels = np.asarray(Image.fromarray(image).resize((rw, rh), bicubic))
+    canvas[y:y + rh, x:x + rw] = pixels[:, :, ::-1] if bgr else pixels
     return canvas, rw, rh

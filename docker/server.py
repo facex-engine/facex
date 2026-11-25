@@ -139,7 +139,7 @@ def detect():
         try:
             if _detector is None:
                 engine = FaceX(embed_weights=EMBED_WEIGHTS, detect_weights=DETECT_WEIGHTS,
-                               input_policy="rectangle", license_key=os.environ.get("LICENSE_KEY"))
+                               input_policy="rectangle_bgr", license_key=os.environ.get("LICENSE_KEY"))
                 if engine.backend != "ctypes":
                     raise RuntimeError("Missing native FaceX library")
                 _detector = engine

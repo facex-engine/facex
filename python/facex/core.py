@@ -19,6 +19,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 EMBEDDING_DIM = 512
 MAX_FACES_DEFAULT = 20
+_POLICY_THRESHOLDS = {"native": 0.5, "rectangle": 0.58, "rectangle_bgr": 0.70}
 
 # FaceXResult struct layout:
 #   float x1, y1, x2, y2, score   (5 floats = 20 bytes)
@@ -204,8 +205,8 @@ class FaceX:
         embed_weights:   Path to embedding weights. Auto-detected if None.
         detect_weights:  Path to detector weights. Auto-detected if None.
         license_key:     License key for encrypted weights (None for plain).
-        score_threshold: Defaults to 0.58 for rectangle input and 0.5 for native input.
-        input_policy: Use "rectangle" for budgeted YuNet inference or "native" for original dimensions.
+        score_threshold: Override the score threshold calibrated for the selected input policy.
+        input_policy: Use "native", "rectangle" (RGB), or "rectangle_bgr" (YuNet 2023mar).
         nms_threshold:   NMS IoU threshold (default 0.4).
         max_faces:       Maximum faces to detect per image (default 20).
     """
@@ -226,11 +227,11 @@ class FaceX:
         self._handle = None
         self._cli_path = cli_path
         self._max_faces = max_faces
-        if input_policy not in ("rectangle", "native"):
+        if input_policy not in _POLICY_THRESHOLDS:
             raise ValueError("Unknown detector input policy")
         self._input_policy = input_policy
         if score_threshold is None:
-            score_threshold = 0.58 if input_policy == "rectangle" else 0.5
+            score_threshold = _POLICY_THRESHOLDS[input_policy]
         self._score_threshold = score_threshold
         self._nms_threshold = nms_threshold
 
@@ -310,7 +311,7 @@ class FaceX:
         ]
         self._lib.facex_set_nms_threshold.restype = None
 
-        if self._input_policy == "rectangle":
+        if self._input_policy != "native":
             if not hasattr(self._lib, "facex_detect_prepared"):
                 raise RuntimeError("Rectangle input requires a library with facex_detect_prepared")
             image_ptr = ctypes.POINTER(ctypes.c_uint8)
@@ -369,7 +370,7 @@ class FaceX:
         h, w = image.shape[:2]
         mf = max_faces or self._max_faces
 
-        if self._input_policy == "rectangle" and self.backend != "ctypes":
+        if self._input_policy != "native" and self.backend != "ctypes":
             raise RuntimeError("Rectangle input requires the native FaceX shared library")
         if self._lib and self._handle:
             return self._detect_ctypes(image, w, h, mf)
@@ -383,9 +384,9 @@ class FaceX:
     def _detect_ctypes(self, image: np.ndarray, w: int, h: int, max_faces: int) -> List[dict]:
         results = (FaceXResult * max_faces)()
         ptr = image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
-        if self._input_policy == "rectangle":
+        if self._input_policy != "native":
             from .yunet import prepare_rectangle
-            canvas, rw, rh = prepare_rectangle(image)
+            canvas, rw, rh = prepare_rectangle(image, bgr=self._input_policy == "rectangle_bgr")
             ch, cw = canvas.shape[:2]
             n = self._lib.facex_detect_prepared(
                 self._handle, ptr, w, h,
