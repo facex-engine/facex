@@ -211,3 +211,14 @@ consistency. Calibrate decision thresholds on separate data for each checkpoint.
 
 The REST compare endpoint accepts a numeric array or the little-endian
 float32 Base64 string returned by the compact detect endpoint for either input.
+
+For single-query CPU search against a large fixed list, use
+`from facex import CompactGallery` and construct it with the same enrollment
+matrix. Both gallery classes expose the same search and identification methods.
+CompactGallery owns a float32 snapshot plus a float64 norm and a flag per row
+(2,057 bytes per 512-component row). It shortlists using a conservative
+floating-point error bound, then ranks finalists in float64. Many near ties
+can require rescoring the entire gallery. Both implementations now use the same
+row-wise summation order for final scores and break equal scores by enrollment
+order. At a floating-point decision boundary a score can differ in the last
+bits from older releases.
