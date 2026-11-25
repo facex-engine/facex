@@ -63,6 +63,13 @@ For small faces use `input_policy="rectangle_bgr_800"`. This raises the pixel
 budget to 800² and uses a calibrated threshold of 0.75. The REST equivalent is
 `FACEX_DETECT_SIZE=800`; the default is 640.
 
+For small faces in the 640 BGR mode, use `min_box_side=8` with
+`input_policy="rectangle_bgr"`, or `FACEX_MIN_BOX_SIDE=8` in REST. This admits
+predicted boxes with both sides at least eight detector pixels and selects a
+score threshold of 0.75. The intermediate setting 12 selects 0.74, and the
+default 16 selects 0.70. The 800 BGR mode uses 0.75 for all three sizes.
+See [the minimum side comparison](../docs/research/yunet_minimum_side.md).
+
 The Docker REST service uses the BGR rectangle policy for `POST /detect` and returns
 up to 32 faces. Mount both weights at the paths above under `/app`, or set
 `EMBED_WEIGHTS` and `DETECT_WEIGHTS` to their paths inside the container.

@@ -97,6 +97,9 @@ void facex_set_score_threshold(FaceX* fx, float threshold);
 /* Set NMS IoU threshold (default 0.4) */
 void facex_set_nms_threshold(FaceX* fx, float threshold);
 
+/* Minimum predicted width and height in detector pixels (default 16). */
+void facex_set_min_box_side(FaceX* fx, int pixels);
+
 #ifdef __cplusplus
 }
 #endif

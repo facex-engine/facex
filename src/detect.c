@@ -28,6 +28,7 @@
 struct Detect {
     float score_threshold;
     float nms_threshold;
+    int min_box_side;
     uint8_t* raw;
     size_t   raw_len;
     float*  tensors[DETECT_MAX_TENSORS];
@@ -55,6 +56,7 @@ Detect* detect_init(const char* weights_path) {
     if (!weights_path) return NULL;
     Detect* det = (Detect*)calloc(1, sizeof(Detect));
     if (!det) return NULL;
+    det->min_box_side = 16;
     det->score_threshold = DETECT_DEFAULT_SCORE_THRESHOLD;
     det->nms_threshold   = DETECT_DEFAULT_NMS_THRESHOLD;
 
@@ -478,7 +480,7 @@ int detect_run(Detect* det, const uint8_t* rgb_hwc, int width, int height,
                 /* Filter degenerate boxes */
                 float bw = candidates[nf].x2 - candidates[nf].x1;
                 float bh = candidates[nf].y2 - candidates[nf].y1;
-                if (bw < 16 || bh < 16) continue;         /* too small */
+                if (bw < det->min_box_side || bh < det->min_box_side) continue;
                 if (bw > width*0.95f || bh > height*0.95f) continue; /* too large */
                 float aspect = bw / (bh + 1e-6f);
                 if (aspect < 0.3f || aspect > 3.0f) continue; /* bad aspect ratio */
@@ -540,4 +542,8 @@ void detect_set_score_threshold(Detect* det, float t) {
 }
 void detect_set_nms_threshold(Detect* det, float t) {
     if(det) det->nms_threshold = t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
+void detect_set_min_box_side(Detect* det, int pixels) {
+    if (det && pixels > 0) det->min_box_side = pixels;
 }

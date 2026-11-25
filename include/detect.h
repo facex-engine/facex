@@ -83,6 +83,9 @@ void detect_set_score_threshold(Detect* det, float threshold);
 /* NMS IoU threshold (default 0.4). */
 void detect_set_nms_threshold(Detect* det, float threshold);
 
+/* Minimum predicted width and height in detector pixels (default 16). */
+void detect_set_min_box_side(Detect* det, int pixels);
+
 #ifdef __cplusplus
 }
 #endif

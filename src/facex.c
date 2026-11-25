@@ -139,3 +139,7 @@ void facex_set_score_threshold(FaceX* fx, float t) {
 void facex_set_nms_threshold(FaceX* fx, float t) {
     if (fx && fx->detector) detect_set_nms_threshold(fx->detector, t);
 }
+
+void facex_set_min_box_side(FaceX* fx, int pixels) {
+    if (fx) detect_set_min_box_side(fx->detector, pixels);
+}

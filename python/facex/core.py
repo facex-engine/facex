@@ -207,6 +207,7 @@ class FaceX:
         license_key:     License key for encrypted weights (None for plain).
         score_threshold: Override the score threshold calibrated for the selected input policy.
         input_policy: Use "native", "rectangle" (RGB), or a YuNet BGR policy ("rectangle_bgr" or "rectangle_bgr_800").
+        min_box_side: Minimum detector box side in pixels (8, 12 or 16).
         nms_threshold:   NMS IoU threshold (default 0.4).
         max_faces:       Maximum faces to detect per image (default 20).
     """
@@ -222,6 +223,7 @@ class FaceX:
         nms_threshold: float = 0.4,
         max_faces: int = MAX_FACES_DEFAULT,
         input_policy: str = "native",
+        min_box_side: int = 16,
     ):
         self._lib = None
         self._handle = None
@@ -229,9 +231,15 @@ class FaceX:
         self._max_faces = max_faces
         if input_policy not in _POLICY_THRESHOLDS:
             raise ValueError("Unknown detector input policy")
+        if min_box_side not in (8, 12, 16):
+            raise ValueError("min_box_side must be 8, 12 or 16")
+        self._min_box_side = min_box_side
         self._input_policy = input_policy
         if score_threshold is None:
-            score_threshold = _POLICY_THRESHOLDS[input_policy]
+            if input_policy == "rectangle_bgr":
+                score_threshold = {8: 0.75, 12: 0.74, 16: 0.70}[min_box_side]
+            else:
+                score_threshold = _POLICY_THRESHOLDS[input_policy]
         self._score_threshold = score_threshold
         self._nms_threshold = nms_threshold
 
@@ -322,6 +330,12 @@ class FaceX:
             ]
             self._lib.facex_detect_prepared.restype = ctypes.c_int
 
+        if self._min_box_side != 16:
+            if not hasattr(self._lib, "facex_set_min_box_side"):
+                raise RuntimeError("Custom min_box_side requires an updated FaceX library")
+            self._lib.facex_set_min_box_side.argtypes = [ctypes.c_void_p, ctypes.c_int]
+            self._lib.facex_set_min_box_side.restype = None
+
         # Init engine
         embed_b = self._embed_weights.encode() if self._embed_weights else None
         detect_b = self._detect_weights.encode() if self._detect_weights else None
@@ -332,6 +346,8 @@ class FaceX:
             self._lib = None
             raise RuntimeError("facex_init returned NULL — check weight paths")
 
+        if self._min_box_side != 16:
+            self._lib.facex_set_min_box_side(self._handle, self._min_box_side)
         self._lib.facex_set_score_threshold(self._handle, self._score_threshold)
         self._lib.facex_set_nms_threshold(self._handle, self._nms_threshold)
 
@@ -375,6 +391,8 @@ class FaceX:
         if self._lib and self._handle:
             return self._detect_ctypes(image, w, h, mf)
         elif self._cli_path:
+            if self._min_box_side != 16:
+                raise RuntimeError("Custom min_box_side requires the native shared library")
             return self._detect_cli(image, w, h, mf)
         else:
             raise RuntimeError(

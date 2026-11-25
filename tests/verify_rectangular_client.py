@@ -21,11 +21,14 @@ def main():
     det = ctypes.c_void_p(lib.detect_init(os.fsencode(os.environ["DETECT_WEIGHTS"])))
     assert det
     side = int(os.environ.get("FACEX_DETECT_SIZE", "640"))
-    lib.detect_set_score_threshold(det, ctypes.c_float(.75 if side == 800 else .70))
+    minimum = int(os.environ.get("FACEX_MIN_BOX_SIDE", "16"))
+    lib.detect_set_min_box_side(det, ctypes.c_int(minimum))
+    threshold = .75 if side == 800 else {8: .75, 12: .74, 16: .70}[minimum]
+    lib.detect_set_score_threshold(det, ctypes.c_float(threshold))
     lib.align_face.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int,
                                ctypes.c_void_p, ctypes.c_void_p]
     sdk = FaceX(embed_weights=os.environ["EMBED_WEIGHTS"], detect_weights=os.environ["DETECT_WEIGHTS"],
-                input_policy="rectangle_bgr_800" if side == 800 else "rectangle_bgr")
+                min_box_side=minimum, input_policy="rectangle_bgr_800" if side == 800 else "rectangle_bgr")
     client = app.test_client()
     patch = Image.open(ROOT / "data/test_face.jpg").convert("RGB").resize((241, 241))
     try:

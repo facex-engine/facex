@@ -32,6 +32,9 @@ DETECT_WEIGHTS = os.environ.get('DETECT_WEIGHTS', 'weights/yunet_fp32.bin')
 DETECT_SIZE = os.environ.get("FACEX_DETECT_SIZE", "640")
 if DETECT_SIZE not in ("640", "800"):
     raise ValueError("FACEX_DETECT_SIZE must be 640 or 800")
+MIN_BOX_SIDE = int(os.environ.get("FACEX_MIN_BOX_SIDE", "16"))
+if MIN_BOX_SIDE not in (8, 12, 16):
+    raise ValueError("FACEX_MIN_BOX_SIDE must be 8, 12 or 16")
 DETECT_POLICY = "rectangle_bgr_800" if DETECT_SIZE == "800" else "rectangle_bgr"
 
 
@@ -145,7 +148,8 @@ def detect():
         try:
             if _detector is None:
                 engine = FaceX(embed_weights=EMBED_WEIGHTS, detect_weights=DETECT_WEIGHTS,
-                               input_policy=DETECT_POLICY, license_key=os.environ.get("LICENSE_KEY"))
+                               input_policy=DETECT_POLICY, min_box_side=MIN_BOX_SIDE,
+                               license_key=os.environ.get("LICENSE_KEY"))
                 if engine.backend != "ctypes":
                     raise RuntimeError("Missing native FaceX library")
                 _detector = engine
