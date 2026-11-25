@@ -1,4 +1,5 @@
 """Embedding refresh for one camera with externally assigned track IDs."""
+from bisect import bisect_left, bisect_right
 import math
 
 import numpy as np
@@ -11,6 +12,36 @@ def _iou(a, b):
     intersection = w*h
     union = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - intersection
     return intersection / union if union > 0 else 0.
+
+
+def _ambiguous_tracks(boxes, tracks):
+    flags = [bool(face.get("ambiguous")) for face in tracks]
+    if len(boxes) < 2 or all(flags):
+        return flags
+
+    order = sorted(range(len(boxes)), key=lambda i: boxes[i][0])
+    left = [boxes[i][0] for i in order]
+    max_right = []
+    furthest = -math.inf
+    for i in order:
+        furthest = max(furthest, boxes[i][2])
+        max_right.append(furthest)
+
+    for i, box in enumerate(boxes):
+        if flags[i]:
+            continue
+        # Outside this range the horizontal intersection has zero width.
+        begin = bisect_right(max_right, box[0])
+        end = bisect_left(left, box[2])
+        for k in range(begin, end):
+            j = order[k]
+            other = boxes[j]
+            if i == j or other[2] <= box[0] or other[3] <= box[1] or box[3] <= other[1]:
+                continue
+            if _iou(box, other) > .15:
+                flags[i] = flags[j] = True
+                break
+    return flags
 
 
 def _appearance(rgb, box):
@@ -52,14 +83,14 @@ class VideoEmbeddings:
         ids = [f["track_id"] for f in tracks]
         if len(ids) != len(set(ids)):
             raise ValueError("Duplicate track ID in one frame")
-        next_tracks, results = {}, []
-        for i, face in enumerate(tracks):
-            key, box = ids[i], tuple(face["bbox"])
+        boxes = [tuple(face["bbox"]) for face in tracks]
+        for box in boxes:
             if len(box) != 4 or not all(map(math.isfinite, box)) or box[2] <= box[0] or box[3] <= box[1]:
                 raise ValueError("Invalid track box")
+        ambiguity = _ambiguous_tracks(boxes, tracks)
+        next_tracks, results = {}, []
+        for key, face, box, ambiguous in zip(ids, tracks, boxes, ambiguity):
             signature, quality = _appearance(rgb, box)
-            ambiguous = bool(face.get("ambiguous")) or any(
-                j != i and _iou(box, other["bbox"]) > .15 for j, other in enumerate(tracks))
             prev = self._tracks.get(key)
             uncertain = face["score"] < .90 or min(box[2]-box[0], box[3]-box[1]) < 40
             refresh = (uncertain or prev is None or self._last_frame != frame_number-1 or ambiguous or
