@@ -11,6 +11,7 @@ Usage:
   gunicorn -w 2 -b 0.0.0.0:8080 server:app
 """
 
+import base64
 import os
 import subprocess
 import threading
@@ -46,7 +47,6 @@ class FaceXProcess:
             [FACEX_CLI, EMBED_WEIGHTS, '--server'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
         )
 
     def embed(self, face_112x112_hwc):
@@ -55,14 +55,20 @@ class FaceXProcess:
         self.proc.stdin.write(data)
         self.proc.stdin.flush()
         out = self.proc.stdout.read(512 * 4)
+        if len(out) != 512 * 4:
+            raise OSError("Incomplete embedding from worker")
         return np.frombuffer(out, dtype=np.float32).copy()
 
     def close(self):
         self.proc.terminate()
+        self.proc.wait()
+        self.proc.stdin.close()
+        self.proc.stdout.close()
 
 
 # Global process (per worker)
 _fx = None
+_embed_lock = threading.Lock()
 _detector = None
 _detector_lock = threading.Lock()
 
@@ -79,11 +85,18 @@ def initialize_detector():
         _detector = engine
 
 
-def get_fx():
+def embed_in_worker(arr):
     global _fx
-    if _fx is None:
-        _fx = FaceXProcess()
-    return _fx
+    # The binary protocol has no request IDs. Keep each write and read together.
+    with _embed_lock:
+        if _fx is None:
+            _fx = FaceXProcess()
+        try:
+            return _fx.embed(arr)
+        except OSError:
+            failed, _fx = _fx, None
+            failed.close()
+            raise
 
 
 @app.route('/health', methods=['GET'])
@@ -106,8 +119,11 @@ def embed():
     arr = np.array(img, dtype=np.float32) / 127.5 - 1.0  # normalize to [-1, 1]
 
     t0 = time.time()
-    fx = get_fx()
-    emb = fx.embed(arr)
+    try:
+        emb = embed_in_worker(arr)
+    except OSError:
+        app.logger.exception("Embedding worker failed")
+        return jsonify({"error": "Face embedding unavailable"}), 503
     ms = (time.time() - t0) * 1000
 
     return jsonify({
@@ -152,6 +168,9 @@ def detect():
     if flag not in ("true", "false"):
         return jsonify({"error": "embeddings must be true or false"}), 400
     embeddings = flag == "true"
+    encoding = request.args.get("embedding_format", "array")
+    if encoding not in ("array", "base64_f32le"):
+        return jsonify({"error": "embedding_format must be array or base64_f32le"}), 400
 
     try:
         with Image.open(request.files['file'].stream) as uploaded:
@@ -169,7 +188,11 @@ def detect():
             return jsonify({'error': 'Face detection unavailable'}), 503
     if embeddings:
         for face in faces:
-            face['embedding'] = face['embedding'].tolist()
+            vector = face["embedding"]
+            if encoding == "base64_f32le":
+                face["embedding"] = base64.b64encode(vector.astype("<f4", copy=False)).decode("ascii")
+            else:
+                face["embedding"] = vector.tolist()
     return jsonify({'faces': faces, 'ms': round((time.perf_counter() - start) * 1000, 2)})
 
 
