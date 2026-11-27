@@ -1,3 +1,4 @@
+#include "../src/edgeface_packed.h"
 /*
  * bench_profile.c — Profile FaceX embedding: GEMM vs other ops.
  * Measures total time and GEMM-only time.
@@ -12,6 +13,13 @@ static double now_ms(void) {
     LARGE_INTEGER f, c;
     QueryPerformanceFrequency(&f); QueryPerformanceCounter(&c);
     return (double)c.QuadPart / f.QuadPart * 1000.0;
+}
+#else
+#include <time.h>
+static double now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 }
 #endif
 
@@ -56,8 +64,6 @@ int main(int argc, char** argv) {
 
     /* Measure individual operations by running benchmark code */
     /* Test: how fast is just the quantize + GEMM portion? */
-    extern void matmul_dynamic_int8(const float*, int, int, int,
-                                     const void*, const int32_t*, const float*, float*);
 
     /* Use the PackedMM info for a representative layer (stage 2: K=100, N=400) */
     printf("\n  Micro-benchmark: matmul sizes typical in EdgeFace:\n");
@@ -102,6 +108,7 @@ int main(int argc, char** argv) {
     extern void int8_gemm_4x8c8(const int8_t*, int, int, int,
                                   const void*, int32_t*, const int32_t*);
 
+    free(A); free(B); free(C);
     M=49; K=100; N=400;
     A = (float*)malloc(M*K*4); B = (float*)malloc(K*N*4); C = (float*)malloc(M*N*4);
     for (int i=0; i<M*K; i++) A[i] = 0.01f * (i%100 - 50);
@@ -148,10 +155,12 @@ int main(int argc, char** argv) {
     printf("    INT8 GEMM  %dx%dx%d: %.3f ms (pure, no quant overhead)\n", M, K, N, best_i8);
 
     /* Dynamic INT8 (with quantize) */
+    QuantScratch scratch = {malloc((size_t)M * ((K + 7) & ~7)), malloc((size_t)M * N * sizeof(int32_t))};
+    if (!scratch.input || !scratch.output) exit(1);
     double best_dyn=1e9;
     for (int i=0; i<1000; i++) {
         double t0 = now_ms();
-        matmul_dynamic_int8(A, M, K, N, pw, cs, w_sc, C);
+        matmul_dynamic_int8(A, M, K, N, pw, cs, w_sc, C, &scratch);
         double dt = now_ms() - t0;
         if (dt < best_dyn) best_dyn = dt;
     }
@@ -164,9 +173,14 @@ int main(int argc, char** argv) {
     extern void pack_b_fp32(const float*, int, int, float*);
     extern void matmul_fp32_packed(const float*, const float*, float*, int, int, int);
     /* Packed size: ceil(N/NR) panels × K × NR floats. NR=16 for AVX-512 */
-    int NR = 16; /* AVX-512 */
-    int pb_sz = ((N + NR - 1) / NR) * K * NR * (int)sizeof(float);
-    float* pb = (float*)malloc(pb_sz);
+    extern int packed_b_fp32_size(int, int);
+    size_t pb_sz = (size_t)packed_b_fp32_size(K, N) * sizeof(float);
+#ifdef _WIN32
+    float* pb = _aligned_malloc(pb_sz, 64);
+#else
+    float* pb = aligned_alloc(64, (pb_sz + 63) & ~(size_t)63);
+#endif
+    if (!pb) exit(1);
     pack_b_fp32(B, K, N, pb);
     double best_fp_pk = 1e9;
     for (int i=0; i<1000; i++) {
@@ -177,8 +191,14 @@ int main(int argc, char** argv) {
     }
     printf("    FP32 packed %dx%dx%d: %.3f ms\n", M, K, N, best_fp_pk);
     printf("    INT8/FP32-packed ratio: %.2fx\n", best_fp_pk / best_i8);
+    
+#ifdef _WIN32
+    _aligned_free(pb);
+#else
     free(pb);
+#endif
 
+    free(scratch.input); free(scratch.output);
     free(A); free(B); free(C); free(B_int8); free(w_sc); free(pw); free(cs);
     free(A_i8); free(C_i32);
     facex_free(fx);

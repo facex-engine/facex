@@ -1,156 +1,71 @@
-# facex-wasm
+# FaceX browser SDK
 
-Face recognition in the browser. 75 KB of WebAssembly. No server, no dependencies.
+Run YuNet detection, five-point alignment and EdgeFace XS recognition in a browser or Web Worker. The SDK returns boxes and landmarks in source-image pixels and one 512-component embedding per aligned face. The [hosted mesh and anti-spoofing demo](https://facex-engine.github.io/facex/demo/) uses a separate ONNX pipeline.
 
-Detect faces, align them, compute 512-dimensional embeddings, and verify identity -- all client-side, all private.
+## Run the SDK demo from a checkout
 
-## Requirements
+Follow the [native guide](../README.md#build-the-native-runtime) to download EdgeFace and export YuNet. From the repository root:
 
-- Chrome 91+, Firefox 89+, Safari 16.4+, Edge 91+ (WebAssembly SIMD required)
-- HTTPS (required for camera access)
-
-## Install
-
-```bash
-npm install facex-wasm
+```sh
+cp data/edgeface_xs_fp32.bin weights/yunet_fp32.bin wasm/
+python -m http.server 8000 --bind 127.0.0.1 --directory wasm
 ```
 
-## Quick start
+Open `http://127.0.0.1:8000/demo.html`. Camera access requires localhost or HTTPS. A canvas or preloaded image also works. For offline deployment, include both weights, both WASM files and the JavaScript assets in the application and serve them locally.
+
+## Use the package
+
+Build or install the package from this revision with `npm install ./wasm` from the repository root. For a bundled application, copy `detect.wasm` and `facex.wasm` to the asset directory and configure the two weight URLs. The model files are distributed separately.
 
 ```js
-import { FaceXSDK } from 'facex-wasm';
+import {FaceXSDK, checkWasmSimd} from 'facex-wasm';
 
-const fx = new FaceXSDK();
-await fx.load();
-
-// Full pipeline: detect + align + embed
-const result = fx.process(videoElement);
-console.log(result.faces);       // [{x1, y1, x2, y2, score, kps}, ...]
-console.log(result.embeddings);  // [Float32Array(512), ...]
-console.log(result.ms);          // processing time in ms
+export async function recognize(canvas) {
+  if (!checkWasmSimd()) throw new Error('WebAssembly SIMD is required');
+  const sdk = new FaceXSDK({
+    wasmBaseUrl: '/assets/facex/',
+    detWeightsUrl: '/models/yunet_fp32.bin',
+    embWeightsUrl: '/models/edgeface_xs_fp32.bin',
+  });
+  await sdk.load();
+  try {
+    return sdk.process(canvas);
+  } finally {
+    await sdk.close();
+  }
+}
 ```
 
-## Script tag usage
+For a video stream, load the SDK once, reuse it across frames and close it when the stream ends. Default weight URLs resolve relative to the page. Cache entries include the resolved URL and model kind. Use versioned asset URLs when replacing a model.
+
+Classic script tags load in this order:
 
 ```html
 <script src="detect.js"></script>
 <script src="facex.js"></script>
 <script src="align.js"></script>
+<script src="cache.js"></script>
+<script src="simd_check.js"></script>
 <script src="facex-sdk.js"></script>
-<script>
-  const fx = new FaceXSDK();
-  await fx.load();
-  const result = fx.process(videoElement);
-</script>
 ```
 
-## API
+Append `liveness.js` to use the optional motion heuristic. Five detector landmarks provide a coarse motion signal. Evaluate presentation-attack detection separately for an authentication deployment.
 
-### `new FaceXSDK(options?)`
+## API and data contracts
 
-Create an SDK instance.
+| Method or setting | Contract |
+|---|---|
+| `load()`, `ready`, `close()` | Concurrent loads share initialization. Close releases both native handles. A closed instance can load again |
+| `detSize` | Square detection budget in pixels, default 160. The resize preserves aspect ratio and applies letterboxing |
+| `detect(source)` | Returns boxes, confidence and five pairs of keypoint coordinates. Accepts an image, canvas or video |
+| `embed(imageData)` | Aligned 112 × 112 RGBA ImageData → 512 floats |
+| `process(source)` | Returns `faces`, `embeddings` and elapsed `ms` from one captured frame |
+| `captureReference(source)` | Returns the first face, its embedding and an independently owned aligned canvas, or `null` |
+| `verify(source, reference)` | Scores the first detected face. `noFace` identifies empty frames. `threshold` defaults to 0.3 and is configurable |
+| `cosSim(a,b)` | Cosine similarity in `[-1,1]` for 512-component inputs, zero for a zero vector |
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `detSize` | `number` | `160` | Detection input size (pixels) |
-| `threshold` | `number` | `0.3` | Cosine similarity threshold for match |
-| `detWeightsUrl` | `string` | `'yunet_fp32.bin'` | URL to detector weights |
-| `embWeightsUrl` | `string` | `'edgeface_xs_fp32.bin'` | URL to embedder weights |
-| `onProgress` | `function` | `null` | Progress callback during loading |
+The worker accepts `init` with optional absolute weight URLs, `detect` with interleaved RGB bytes or normalized HWC float32, and `embed` with 112 × 112 normalized HWC float32. Wait for `ready`. Error replies contain a `message`. [Worker protocol](worker.js) · [TypeScript declarations](index.d.ts)
 
-### `fx.load(): Promise<FaceXSDK>`
+## Rebuild the detector
 
-Load WASM engines and model weights. Call once before using other methods.
-
-### `fx.detect(source): Face[]`
-
-Detect faces in a video, image, or canvas element. Returns array of faces with bounding boxes and 5 keypoints.
-
-### `fx.embed(imageData): Float32Array`
-
-Compute a 512-dim embedding from an aligned 112x112 face ImageData.
-
-### `fx.process(source): ProcessResult`
-
-Full pipeline: detect all faces, align each one, compute embeddings.
-
-```js
-const { faces, embeddings, ms } = fx.process(videoElement);
-```
-
-### `fx.verify(source, refEmbedding): VerifyResult`
-
-Compare a live frame against a reference embedding.
-
-```js
-const ref = fx.captureReference(videoElement);
-// Later...
-const { match, similarity } = fx.verify(videoElement, ref.embedding);
-if (match) console.log(`Verified! Similarity: ${similarity.toFixed(2)}`);
-```
-
-### `fx.captureReference(source): CaptureResult | null`
-
-Capture a reference embedding from the current frame. Returns `null` if no face detected.
-
-### `fx.cosSim(a, b): number`
-
-Cosine similarity between two 512-dim embeddings. Returns value between -1 and 1.
-
-## Liveness detection
-
-Basic liveness check using motion, blink, and size variation analysis.
-
-```js
-import { LivenessDetector } from 'facex-wasm';
-
-const liveness = new LivenessDetector();
-
-function onFrame() {
-  const faces = fx.detect(videoElement);
-  const { alive, confidence, reason } = liveness.update(faces[0] || null);
-  console.log(alive, confidence, reason);
-}
-```
-
-## Utilities
-
-```js
-import { checkWasmSimd, checkBrowserSupport } from 'facex-wasm';
-
-if (!checkWasmSimd()) {
-  alert('Your browser does not support WebAssembly SIMD');
-}
-
-const issues = checkBrowserSupport();
-if (issues.length > 0) {
-  console.warn('Browser issues:', issues);
-}
-```
-
-## Weight files
-
-The SDK needs two weight files served alongside your app:
-
-| File | Size | Description |
-|------|------|-------------|
-| `yunet_fp32.bin` | 208 KB | Face detector weights |
-| `edgeface_xs_fp32.bin` | 7 MB | Face embedder weights |
-
-Weights are cached in IndexedDB after first load.
-
-## Architecture
-
-| File | Size | Purpose |
-|------|------|---------|
-| `detect.wasm` | 30 KB | Face detector (YuNet, WASM+SIMD) |
-| `facex.wasm` | 45 KB | Face embedder (EdgeFace-XS, WASM+SIMD) |
-| `facex-sdk.js` | 10 KB | Unified SDK class |
-| `align.js` | 4 KB | 5-point affine face alignment |
-| `liveness.js` | 5 KB | Motion/blink liveness checks |
-
-Total engine size: ~75 KB WASM + 19 KB JS (before gzip).
-
-## License
-
-Apache-2.0
+From the repository root, run `make wasm-detector` with Emscripten installed. The distributed detector is compiled from the native YuNet source. The SDK uses the module factory `DetectModule`, copies byte RGB into the detector and copies float RGB into the embedder. [Detector source](../src/detect.c) · [Model hashes and licensing](../README.md#licensing-and-provenance)

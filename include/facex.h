@@ -2,13 +2,12 @@
  * FaceX — Face detection + recognition library.
  *
  * Detect faces, compute embeddings, compare — all in one API.
- * 3ms embedding, 4ms detection, zero dependencies.
  *
  * Usage:
  *   FaceX* fx = facex_init("embed.bin", "detect.bin", NULL);
  *   FaceXResult results[10];
  *   int n = facex_detect(fx, rgb, width, height, results, 10);
- *   float sim = facex_similarity(results[0].embedding, ref_embedding);
+ *   if (n > 0) printf("%f\n", facex_similarity(results[0].embedding, ref_embedding));
  *   facex_free(fx);
  *
  * https://github.com/facex-engine/facex
@@ -25,7 +24,8 @@
 extern "C" {
 #endif
 
-/* Opaque handle */
+/* Calls on one handle protect its scratch storage. Separate handles may run concurrently.
+ * Wait for all callers before freeing a handle. */
 typedef struct FaceX FaceX;
 
 /* Detection + embedding result for one face */
@@ -33,7 +33,7 @@ typedef struct {
     float x1, y1, x2, y2;      /* bbox in input pixel coords */
     float score;                /* detection confidence [0,1] */
     float kps[10];              /* 5 keypoints (x,y) pairs: left_eye, right_eye, nose, left_mouth, right_mouth */
-    float embedding[512];       /* 512-dim L2-normalized embedding */
+    float embedding[512];       /* 512 raw EdgeFace XS components */
 } FaceXResult;
 
 /*

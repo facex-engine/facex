@@ -48,11 +48,13 @@ type Config struct {
 
 // FaceX is a persistent subprocess wrapping facex-cli --server.
 type FaceX struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	mu     sync.Mutex
-	closed bool
+	inputBuf  []byte
+	outputBuf [OutputBytes]byte
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	mu        sync.Mutex
+	closed    bool
 }
 
 // defaultExe returns the right binary name for the current OS.
@@ -77,9 +79,15 @@ func New(cfg Config) (*FaceX, error) {
 	if cfg.Weights == "" {
 		cfg.Weights = "data/edgeface_xs_fp32.bin"
 	}
+	if cfg.Workdir == "" && filepath.Base(cfg.Exe) != cfg.Exe {
+		exe, err := filepath.Abs(cfg.Exe)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Exe = exe
+	}
 	if cfg.Workdir == "" {
-		abs, _ := filepath.Abs(cfg.Exe)
-		cfg.Workdir = filepath.Dir(abs)
+		cfg.Workdir = filepath.Dir(cfg.Exe)
 	}
 
 	cmd := exec.Command(cfg.Exe, cfg.Weights, "--server")
@@ -101,11 +109,11 @@ func New(cfg Config) (*FaceX, error) {
 		_ = stdout.Close()
 		return nil, err
 	}
-	return &FaceX{cmd: cmd, stdin: stdin, stdout: stdout}, nil
+	return &FaceX{cmd: cmd, stdin: stdin, stdout: stdout, inputBuf: make([]byte, InputBytes)}, nil
 }
 
 // Embed runs a single forward pass. input must be exactly 3*112*112 floats
-// in HWC order, range [-1, 1]. Returns a 512-float L2-normalized embedding.
+// in HWC order, range [-1, 1]. Returns 512 raw EdgeFace XS components. Use CosSim for cosine scoring.
 func (fx *FaceX) Embed(input []float32) ([]float32, error) {
 	if len(input) != InputSize {
 		return nil, fmt.Errorf("input length %d != expected %d", len(input), InputSize)
@@ -115,14 +123,14 @@ func (fx *FaceX) Embed(input []float32) ([]float32, error) {
 	if fx.closed {
 		return nil, fmt.Errorf("facex: subprocess already closed")
 	}
-	buf := make([]byte, InputBytes)
+	buf := fx.inputBuf
 	for i, v := range input {
 		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(v))
 	}
 	if _, err := fx.stdin.Write(buf); err != nil {
 		return nil, fmt.Errorf("stdin write: %w", err)
 	}
-	outBuf := make([]byte, OutputBytes)
+	outBuf := fx.outputBuf[:]
 	if _, err := io.ReadFull(fx.stdout, outBuf); err != nil {
 		return nil, fmt.Errorf("stdout read: %w", err)
 	}
@@ -133,8 +141,11 @@ func (fx *FaceX) Embed(input []float32) ([]float32, error) {
 	return out, nil
 }
 
-// CosSim returns the cosine similarity of two embeddings.
+// CosSim returns cosine similarity, zero for a zero vector, and NaN for mismatched lengths.
 func CosSim(a, b []float32) float32 {
+	if len(a) != len(b) {
+		return float32(math.NaN())
+	}
 	var dot, na, nb float64
 	for i := range a {
 		dot += float64(a[i]) * float64(b[i])

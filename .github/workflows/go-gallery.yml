@@ -1,4 +1,4 @@
-name: Go gallery checks
+name: FaceX runtime checks
 on:
   push:
     paths:
@@ -6,11 +6,14 @@ on:
       - 'Makefile'
       - 'src/**'
       - 'include/**'
-      - 'tests/golden/**'
-      - 'tests/bench_gallery_codes.py'
-      - 'tests/bench_gallery_groups.py'
-      - 'tests/check_gallery_profiles.py'
-      - 'python/facex/gallery.py'
+      - 'tests/**'
+      - 'nn2/**'
+      - 'frvt/**'
+      - 'training/scripts/binformat.py'
+      - 'docker/**'
+      - 'python/**'
+      - 'wasm/**'
+      - 'download_weights.sh'
       - '.github/workflows/go-gallery.yml'
   workflow_dispatch:
 
@@ -50,7 +53,7 @@ jobs:
           FACEX_GALLERY_SCALE: '1'
           FACEX_GALLERY_FIXTURE: ${{ runner.temp }}/gallery
         run: |
-          make cli cli-fp32
+          make -j2 all check cli-fp32 libfacex.so
           mv facex-cli-fp32 "$RUNNER_TEMP/facex-native-fp32"
           make cli-fp32 CFLAGS="-O3 -march=x86-64 -funroll-loops"
           cc --version | head -1
@@ -73,3 +76,81 @@ jobs:
         run: |
           go test -race -v -timeout=90s -run '^TestPoolRealEngine$' -count=1 ./...
           FACEX_POOL_TEST_EXE="$RUNNER_TEMP/facex-native-fp32" go test -race -v -timeout=90s -run '^TestPoolRealEngine$' -count=1 ./...
+  runtimes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      PYTHONPATH: python:docker:tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build native libraries and examples
+        run: |
+          make -j2 all cli-fp32 libfacex.so mfn-cli mfn-example check
+          make -C nn2 -j2
+          cc -O2 -Iinclude tests/bench_profile.c libfacex.a -lm -lpthread -o "$RUNNER_TEMP/bench-profile"
+          c++ -O2 -std=c++11 tests/frvt_alignment.cpp -o "$RUNNER_TEMP/frvt-alignment"
+          "$RUNNER_TEMP/frvt-alignment"
+          for flags in "-march=x86-64" "-march=x86-64-v3"; do
+            make -B nn2-gemm-test CFLAGS="-O2 $flags"
+            ./nn2-gemm-test
+          done
+      - name: Verify released weights and both Python transports
+        run: |
+          python -m pip install numpy==2.3.5 Pillow==12.0.0 flask onnx==1.18.0 onnxruntime playwright
+          bash download_weights.sh
+          bash download_weights.sh
+          curl -fsSL --retry 2 https://media.githubusercontent.com/media/opencv/opencv_zoo/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx -o data/yunet.onnx
+          echo '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4  data/yunet.onnx' | sha256sum --check
+          python tools/export_yunet_weights.py data/yunet.onnx weights/yunet_fp32.bin
+          echo 'bf2a36bd1a3be7310a1062a22726a089bfee79c29b3cac16e3ffe568d4433d69  weights/yunet_fp32.bin' | sha256sum --check
+          make test
+          python -m unittest discover -s tests -p 'test_*.py'
+          python tests/check_runtime_backends.py libfacex.so facex-cli weights/yunet_fp32.bin data/edgeface_xs_fp32.bin
+          cc -O2 -Iinclude tests/weights_lifetime.c libfacex.a -Wl,--wrap=malloc,--wrap=free,--wrap=aligned_alloc,--wrap=calloc -lpthread -lm -o "$RUNNER_TEMP/lifetime"
+          "$RUNNER_TEMP/lifetime" data/edgeface_xs_fp32.bin
+      - name: Check the released Nano graph and public C handle
+        run: |
+          curl -fsSL --retry 2 https://github.com/facex-engine/facex/releases/download/facex-nano-1.0/facex_nano.onnx -o data/nano.onnx
+          echo 'bd0094143bb4c7d04a76dcdad4e332f5985847b921ec4d6678c3fd89aaea3889  data/nano.onnx' | sha256sum --check
+          cc -O3 -march=native -shared -fPIC -Iinclude src/facex_mfn.c -lm -o "$RUNNER_TEMP/mfn.so"
+          python tests/check_nano_contract.py data/nano.onnx "$RUNNER_TEMP/mfn.so" "$RUNNER_TEMP/nano.bin"
+          ./example_mfn "$RUNNER_TEMP/nano.bin"
+      - name: Run the distributed package in Chromium and a Web Worker
+        run: |
+          node --input-type=module -e "import * as sdk from './wasm/index.js'; for (const n of ['FaceXSDK','alignFace','LivenessDetector','loadWeightsCached','checkWasmSimd','checkBrowserSupport']) if (typeof sdk[n] !== 'function') throw Error(n); if (!sdk.checkWasmSimd()) throw Error('SIMD')"
+          python tests/check_browser_sdk.py weights/yunet_fp32.bin data/edgeface_xs_fp32.bin --chromium "$(command -v google-chrome)"
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Run portable FP32 inference on Apple Silicon
+        run: |
+          test "$(uname -m)" = arm64
+          make cli-fp32 CFLAGS="-O3"
+          bash download_weights.sh
+          cd go/facex
+          FACEX_POOL_TEST_EXE="$GITHUB_WORKSPACE/facex-cli-fp32" FACEX_POOL_TEST_WEIGHTS="$GITHUB_WORKSPACE/data/edgeface_xs_fp32.bin" go test -race -v -timeout=90s -run '^TestPoolRealEngine$' -count=1 ./...
+  frvt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the XS adapter and check its public template interface
+        run: |
+          sdk="$RUNNER_TEMP/onnxruntime-linux-x64-1.21.0"
+          sh frvt/prepare_ort.sh "$sdk"
+          cmake -S frvt -B "$RUNNER_TEMP/frvt-build" -DONNXRUNTIME_ROOT="$sdk" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/frvt-build" --parallel 2
+          cmake --install "$RUNNER_TEMP/frvt-build" --prefix "$RUNNER_TEMP/frvt"
+          lib="$RUNNER_TEMP/frvt/lib"
+          c++ -std=c++14 -Ifrvt/include tests/frvt_templates.cpp -L"$lib" -lfrvt_11_facex_001 -Wl,-rpath,"$lib" -Wl,-rpath-link,"$sdk/lib" -o "$RUNNER_TEMP/frvt-templates"
+          LD_LIBRARY_PATH="$sdk/lib" "$RUNNER_TEMP/frvt-templates"

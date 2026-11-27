@@ -37,7 +37,7 @@ function getSimilarityTransform(src, dst) {
     const sxc = src[i][0] - sx, syc = src[i][1] - sy;
     const dxc = dst[i][0] - dx, dyc = dst[i][1] - dy;
     num1 += dxc * sxc + dyc * syc;
-    num2 += dxc * syc - dyc * sxc;
+    num2 += dyc * sxc - dxc * syc;
     den += sxc * sxc + syc * syc;
   }
 
@@ -60,7 +60,11 @@ function getSimilarityTransform(src, dst) {
  * @returns {ImageData} - 112x112 aligned face
  */
 function alignFace(srcCtx, srcW, srcH, kps, dstCtx) {
-  // Get transform: destination (112x112 ref) → source (video)
+  return alignFacePixels(srcCtx.getImageData(0, 0, srcW, srcH), kps, dstCtx);
+}
+
+function alignFacePixels(frame, kps, dstCtx) {
+  const srcW = frame.width, srcH = frame.height;
   // We need inverse: for each dst pixel, find src pixel
   const [a, b, tx, ty] = getSimilarityTransform(kps, REF_POINTS);
 
@@ -68,27 +72,28 @@ function alignFace(srcCtx, srcW, srcH, kps, dstCtx) {
   // M = [a, -b, tx; b, a, ty]
   // M_inv = (1/det) * [a, b, -a*tx-b*ty; -b, a, b*tx-a*ty]
   const det = a * a + b * b;
+  if (!(det > 0) || !Number.isFinite(det)) throw new RangeError('Degenerate landmark transform');
   const ai = a / det, bi = b / det;
   const txi = -(ai * tx + bi * ty);
   const tyi = (bi * tx - ai * ty);
 
-  const srcData = srcCtx.getImageData(0, 0, srcW, srcH);
+  const epsilon = 64 * Number.EPSILON * Math.max(srcW, srcH);
   const dstData = dstCtx.createImageData(112, 112);
-  const src = srcData.data;
+  const src = frame.data;
   const dst = dstData.data;
 
   for (let dy = 0; dy < 112; dy++) {
     for (let dx = 0; dx < 112; dx++) {
       // Map dst → src using inverse transform
-      const sx = ai * dx - bi * dy + txi;
-      const sy = bi * dx + ai * dy + tyi;
+      const sx = ai * dx + bi * dy + txi + epsilon;
+      const sy = -bi * dx + ai * dy + tyi + epsilon;
 
       // Bilinear interpolation
       const x0 = Math.floor(sx), y0 = Math.floor(sy);
-      const x1 = x0 + 1, y1 = y0 + 1;
+      const x1 = Math.min(x0 + 1, srcW - 1), y1 = Math.min(y0 + 1, srcH - 1);
       const fx = sx - x0, fy = sy - y0;
 
-      if (x0 >= 0 && x1 < srcW && y0 >= 0 && y1 < srcH) {
+      if (x0 >= 0 && x0 < srcW && y0 >= 0 && y0 < srcH) {
         const i00 = (y0 * srcW + x0) * 4;
         const i10 = (y0 * srcW + x1) * 4;
         const i01 = (y1 * srcW + x0) * 4;
@@ -111,3 +116,5 @@ function alignFace(srcCtx, srcW, srcH, kps, dstCtx) {
   dstCtx.putImageData(dstData, 0, 0);
   return dstData;
 }
+
+if (typeof module !== 'undefined' && module.exports) module.exports = {alignFace, alignFacePixels};

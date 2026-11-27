@@ -1,8 +1,13 @@
-CC      = /c/mingw64/bin/gcc
+CC      ?= cc
 CFLAGS  = -O3 -march=native -funroll-loops -ffast-math -fomit-frame-pointer \
           -fno-plt -fvisibility=hidden -DNDEBUG \
           -Wno-unused-function -Wno-unused-variable -Iinclude -Isrc
-LDFLAGS = -lm -lsynchronization
+LDLIBS  = -lm
+ifeq ($(OS),Windows_NT)
+LDLIBS += -lsynchronization
+else
+LDLIBS += -lpthread
+endif
 LTO     = -flto
 
 # PGO targets (10-18% free speedup)
@@ -27,16 +32,18 @@ ALL_OBJ = $(CORE_OBJ) $(INT8_OBJ)
 all: nn2 nn2_img nn2_nvr nanodet
 
 nn2: $(ALL_OBJ) src/main.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 nn2_img: $(ALL_OBJ) src/main_img.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 nn2_nvr: $(ALL_OBJ) $(NVR_OBJ) src/main_nvr.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 nanodet: $(ALL_OBJ) $(ND_OBJ) src/main_nanodet.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+src/gemm.o src/gemm_res.o: src/gemm_vector.h src/fast_exp.h
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

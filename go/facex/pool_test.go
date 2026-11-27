@@ -211,3 +211,38 @@ func TestPoolRealEngine(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestRelativeExecutableKeepsIndependentResults(t *testing.T) {
+	t.Setenv("FACEX_POOL_TEST_CHILD", "1")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(cwd, exe)
+	if err != nil {
+		t.Skipf("cannot form relative path: %v", err)
+	}
+	fx, err := New(Config{Exe: relative})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fx.Close()
+	first, err := fx.Embed(poolInput(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := fx.Embed(poolInput(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first[0] != 1 || second[0] != 2 {
+		t.Fatal("a later request overwrote an earlier result")
+	}
+	if !math.IsNaN(float64(CosSim(first, second[:1]))) {
+		t.Fatal("mismatched dimensions should return NaN")
+	}
+}

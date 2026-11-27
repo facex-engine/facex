@@ -251,24 +251,17 @@ void softmax_fp32(float* x, int N, int C) {
 /* ============ Dynamic INT8 MatMul ============ */
 /* C[M,N] = A_fp32[M,K] @ W_int8_packed[K,N], with dynamic A quantization.
  * W is pre-packed in c8 format. A is quantized per-tensor at runtime. */
+#include "edgeface_packed.h"
 #ifndef FACEX_FP32_ONLY
 void matmul_dynamic_int8(const float* A_fp32, int M, int K, int N,
                          const void* W_packed, const int32_t* col_sums,
-                         const float* w_scales, float* C_fp32)
+                         const float* w_scales, float* C_fp32, QuantScratch* scratch)
 {
     int K_padded = (K + 7) & ~7;
     int n_elem = M * K;
 
-    /* Static workspace (avoid malloc per call) */
-    static int8_t* s_A_int8 = NULL;
-    static int32_t* s_C_int32 = NULL;
-    static size_t s_A_cap = 0, s_C_cap = 0;
-    size_t a_need = (size_t)M * K_padded;
-    size_t c_need = (size_t)M * N;
-    if (a_need > s_A_cap) { free(s_A_int8); s_A_int8 = (int8_t*)malloc(a_need); s_A_cap = a_need; }
-    if (c_need > s_C_cap) { free(s_C_int32); s_C_int32 = (int32_t*)malloc(c_need * 4); s_C_cap = c_need; }
-    int8_t* A_int8 = s_A_int8;
-    int32_t* C_int32 = s_C_int32;
+    int8_t* A_int8 = scratch->input;
+    int32_t* C_int32 = scratch->output;
 
     /* Dynamic per-tensor quantization: find max|A| then quantize.
      * AVX-512: scan 16 floats per iteration. */

@@ -62,6 +62,7 @@ typedef struct {
 
 static Worker g_workers[MAX_THREADS];
 static int g_n_threads = 0;
+static unsigned g_users = 0;
 static volatile int g_shutdown = 0;
 
 static
@@ -98,6 +99,7 @@ worker_fn(void* arg)
                 continue;
             }
         }
+        if (ATOMIC_LOAD(&g_shutdown)) break;
         last_phase = phase;
 
         while (1) {
@@ -120,6 +122,7 @@ worker_fn(void* arg)
 
 void nn2_tp_init(int n_threads)
 {
+    if (g_users++ > 0) return;
     if (n_threads <= 0) {
 #ifdef _WIN32
         SYSTEM_INFO si; GetSystemInfo(&si);
@@ -127,11 +130,11 @@ void nn2_tp_init(int n_threads)
 #else
         n_threads = sysconf(_SC_NPROCESSORS_ONLN);
 #endif
-        if (n_threads > MAX_THREADS) n_threads = MAX_THREADS;
-        if (n_threads < 1) n_threads = 1;
     }
+    if (n_threads > MAX_THREADS) n_threads = MAX_THREADS;
+    if (n_threads < 1) n_threads = 1;
 
-    g_n_threads = n_threads;
+    g_n_threads = 1;
     int n_workers = n_threads - 1;
     memset(&g_task, 0, sizeof(g_task));
     ATOMIC_STORE(&g_shutdown, 0);
@@ -141,9 +144,11 @@ void nn2_tp_init(int n_threads)
 #ifdef _WIN32
         g_workers[i].handle = (HANDLE)_beginthreadex(
             NULL, 0, worker_fn, &g_workers[i], 0, NULL);
+        if (!g_workers[i].handle) break;
 #else
-        pthread_create(&g_workers[i].handle, NULL, worker_fn, &g_workers[i]);
+        if (pthread_create(&g_workers[i].handle, NULL, worker_fn, &g_workers[i]) != 0) break;
 #endif
+        g_n_threads++;
     }
 }
 
@@ -199,13 +204,16 @@ void nn2_tp_parallel_for(nn2_task_fn fn, void* ctx, int total, int grain)
 
 void nn2_tp_destroy(void)
 {
+    if (!g_users || --g_users > 0) return;
     int n_workers = g_n_threads - 1;
     ATOMIC_STORE(&g_shutdown, 1);
     ATOMIC_ADD(&g_task.phase, 1);
 #ifdef _WIN32
     WakeByAddressAll((void*)&g_task.phase);
-    for (int i = 0; i < n_workers; i++)
+    for (int i = 0; i < n_workers; i++) {
         WaitForSingleObject(g_workers[i].handle, INFINITE);
+        CloseHandle(g_workers[i].handle);
+    }
 #else
     syscall(SYS_futex, &g_task.phase, FUTEX_WAKE, MAX_THREADS, NULL, NULL, 0);
     for (int i = 0; i < n_workers; i++)
@@ -214,4 +222,4 @@ void nn2_tp_destroy(void)
     g_n_threads = 0;
 }
 
-int nn2_tp_num_threads(void) { return g_n_threads; }
+int nn2_tp_num_threads(void) { return g_n_threads > 0 ? g_n_threads : 1; }

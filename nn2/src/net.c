@@ -10,28 +10,27 @@
 
 #include "nn2_internal.h"
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 /* No explicit SIMD here — compiler auto-vectorizes with -O3 */
 
 /* ============ Weight file format ============ */
 
-static float* read_tensor(FILE* f, int* out_size)
+static float* read_tensor(FILE* f, size_t expected)
 {
     uint32_t sz;
-    if (fread(&sz, 4, 1, f) != 1) return NULL;
+    if (fread(&sz, 4, 1, f) != 1 || sz != expected) return NULL;
     float* data = (float*)malloc(sz * sizeof(float));
     if (!data) return NULL;
     if (fread(data, sizeof(float), sz, f) != sz) { free(data); return NULL; }
-    *out_size = (int)sz;
     return data;
 }
 
 static int load_conv(FILE* f, ConvLayer* L, int cout, int cin, int k, int stride, int pad, int act)
 {
-    int wsz, bsz;
-    L->w = read_tensor(f, &wsz);
-    L->b = read_tensor(f, &bsz);
+    L->w = read_tensor(f, (size_t)cout * cin * k * k);
+    L->b = read_tensor(f, cout);
     if (!L->w || !L->b) return -1;
     L->cout = cout; L->cin = cin; L->k = k;
     L->stride = stride; L->pad = pad; L->act = act;
@@ -60,16 +59,15 @@ int nn2_load_weights(NN2* ctx, const char* path)
     if (!f) { fprintf(stderr, "nn2: cannot open %s\n", path); return -1; }
 
     char magic[4];
-    fread(magic, 1, 4, f);
-    if (memcmp(magic, "NN2W", 4) != 0) {
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "NN2W", 4) != 0) {
         fprintf(stderr, "nn2: invalid weight file\n");
         fclose(f); return -1;
     }
 
     uint32_t nc, isz, ntensors;
-    fread(&nc, 4, 1, f);
-    fread(&isz, 4, 1, f);
-    fread(&ntensors, 4, 1, f);
+    if (fread(&nc, 4, 1, f) != 1 || fread(&isz, 4, 1, f) != 1 ||
+        fread(&ntensors, 4, 1, f) != 1 || !nc || nc > INT_MAX / NN2_MAX_ANCHORS ||
+        isz < 32 || isz > 640 || isz % 32) goto fail;
     ctx->num_classes = (int)nc;
     ctx->input_size = (int)isz;
 

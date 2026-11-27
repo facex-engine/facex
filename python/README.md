@@ -18,8 +18,8 @@ pip install -e ".[image]"
 import numpy as np
 from facex import FaceX
 
-# Initialize (auto-finds library and weights)
-fx = FaceX()
+# After building the library and preparing both weights from the repository root
+fx = FaceX(embed_weights="data/edgeface_xs_fp32.bin", detect_weights="weights/yunet_fp32.bin")
 
 # Load an image as RGB uint8 numpy array (H, W, 3)
 from PIL import Image
@@ -35,7 +35,7 @@ for face in faces:
 # Compare two faces
 if len(faces) >= 2:
     sim = FaceX.similarity(faces[0]["embedding"], faces[1]["embedding"])
-    print(f"Similarity: {sim:.3f}  ({'same' if sim > 0.3 else 'different'} person)")
+    print(f"Cosine similarity: {sim:.3f}")
 ```
 
 ## Rectangular YuNet input
@@ -44,7 +44,7 @@ For camera frames and photos, initialize the native SDK with the rectangle polic
 Install the image extra for Pillow and build the shared library from this version.
 
 ```python
-fx = FaceX(embed_weights="weights/edgeface_xs_fp32.bin",
+fx = FaceX(embed_weights="data/edgeface_xs_fp32.bin",
            detect_weights="weights/yunet_fp32.bin",
            input_policy="rectangle_bgr")
 faces = fx.detect(image)
@@ -71,8 +71,9 @@ default 16 selects 0.70. The 800 BGR mode uses 0.75 for all three sizes.
 See [the minimum side comparison](../docs/research/yunet_minimum_side.md).
 
 The Docker REST service uses the BGR rectangle policy for `POST /detect` and returns
-up to 32 faces. Mount both weights at the paths above under `/app`, or set
-`EMBED_WEIGHTS` and `DETECT_WEIGHTS` to their paths inside the container.
+up to 32 faces. By default the container reads `/app/weights/edgeface_xs_fp32.bin`
+and `/app/weights/yunet_fp32.bin`. Mount those files or set `EMBED_WEIGHTS` and
+`DETECT_WEIGHTS` to their paths inside the container.
 
 ```sh
 curl -F file=@photo.jpg http://localhost:8080/detect
@@ -80,10 +81,11 @@ curl -F file=@photo.jpg http://localhost:8080/detect
 
 ## Configuration
 
+Build the shared library with `make libfacex.so` on Linux or choose the CLI explicitly with `FaceX(cli_path="./facex-cli", ...)`. The rectangle and guided detection paths use the shared library. See the [build and weights instructions](../README.md#build-the-native-runtime).
+
 ### Auto-detection
 
-FaceX looks for the native library and weights relative to the package location
-(expects `../../weights/` and `../../libfacex.so` or `../../facex.dll`).
+The SDK searches for the shared library near the package and under `FACEX_ROOT`. It recognizes the downloaded EdgeFace weights in `data/` and detector weights in `weights/`.
 
 ### Environment variables
 
@@ -114,8 +116,8 @@ fx = FaceX(
 
 Main class. Uses ctypes (shared library) if available, falls back to subprocess (CLI).
 
-- **`detect(image, max_faces=None)`** -- Detect faces in an RGB uint8 image. Returns list of dicts with `bbox`, `score`, `keypoints`, `embedding`.
-- **`embed(face_112x112)`** -- Compute embedding for a pre-aligned 112x112 face (ctypes only). Input: float32 HWC in [-1, 1]. Returns 512-dim float32 array.
+- **`detect(image, max_faces=None, *, embeddings=True)`** returns a list of dictionaries with `bbox`, `score` and `keypoints` for an RGB uint8 image. With `embeddings=True` each result also includes its vector.
+- **`embed(face_112x112)`** -- Compute embedding for a pre-aligned 112x112 face using either native backend. Input: float32 HWC in [-1, 1]. Returns 512 raw float32 values. Use cosine similarity to score two outputs.
 - **`similarity(emb1, emb2)`** -- Static method. Cosine similarity between two 512-dim embeddings. Returns float in [-1, 1].
 - **`close()`** -- Free native resources. Also works as context manager (`with FaceX() as fx: ...`).
 - **`backend`** -- Property: `"ctypes"`, `"cli"`, or `"none"`.
@@ -134,7 +136,7 @@ sim = similarity(emb1, emb2)
 | Backend | Requires | Detection | Embedding (standalone) |
 |---|---|---|---|
 | ctypes | `libfacex.so` / `facex.dll` | Yes | Yes |
-| cli | `facex-cli` binary | Yes | No (use detect) |
+| cli | `facex-cli` from this revision | Yes, native image dimensions | Yes |
 | none | nothing | No | No |
 
 Similarity always works (pure numpy).

@@ -1,8 +1,6 @@
 # FaceX training
 
-Train 4 size variants (Nano / Tiny / Standard / XS) of the FaceX
-embedding model from scratch on MS1M-RefineV2, export to the parametric
-`.bin` v2 format.
+Train four MobileFaceNet recognition variants and export EFM3 weights. The training scripts describe MS1M-RefineV2 as their input. For the published Nano ONNX, see the [artifact contract](../MFN_README.md#public-nano-release) and [provenance notes](../README.md#licensing-and-provenance).
 
 ## Files
 
@@ -24,10 +22,12 @@ training/
     train.py              - ArcFace training for one arch
     train_all.py          - sequential trainer for all 4
     lfw_eval.py           - 10-fold CV verification
-    binformat.py          - .bin v2 reader/writer + tensor layout
+    binformat.py          - EFM3 reader/writer and tensor layout
     export_bin.py         - PyTorch checkpoint -> .bin
     smoke_test.py         - model -> .bin -> reload roundtrip check
 ```
+
+Run the following commands from the `training/` directory. Training requires a separately obtained dataset.
 
 ## One-time setup
 
@@ -52,16 +52,7 @@ python scripts/train_all.py
 python scripts/train.py --arch nano --epochs 25 --batch 512
 ```
 
-Realistic wall time on RTX 5060 Ti (16 GB):
-
-| arch     | params | epochs | est. time |
-|----------|-------:|-------:|----------:|
-| nano     |   203K |     25 |   ~4h     |
-| tiny     |   514K |     25 |   ~6h     |
-| standard |  1.07M |     22 |   ~10h    |
-| xs       |  1.78M |     20 |   ~16h    |
-
-Total ~36h. Train_all auto-resumes if interrupted.
+The sequential trainer can resume interrupted runs from saved checkpoints. Report measured throughput with the dataset size, batch size, precision and GPU model. See the [run notes](RESUME.md) for the original environment.
 
 ## Export
 
@@ -73,32 +64,12 @@ python scripts/export_bin.py --arch nano \
     --out ../weights/facex_nano.bin
 ```
 
-The .bin is FP32 on disk (~4x the INT8 deploy size). The C engine's
-INT8 quantization happens at load time.
+The EFM3 file stores FP32 tensors. The C MobileFaceNet runtime can open it with `mfn_open()`. Use `mfn_embedding_dim()` to allocate the output for the chosen architecture. See the [native example](../examples/example_mfn.c).
 
-## Targets
+## EFM3 format
 
-| arch     | LFW target |
-|----------|-----------:|
-| nano     | >= 97%     |
-| tiny     | >= 98.5%   |
-| standard | >= 99.5%   |
-| xs       | >= 99.7%   |
+The little-endian file starts with the four bytes `EFM3`, a uint32 version of 3, and an 80-byte architecture header. A length-prefixed UTF-8 JSON copy of the architecture and a uint32 tensor count follow. Each tensor record has a uint32 byte length and its contiguous FP32 data. The model exporter and loader must agree on tensor order. [Format implementation](scripts/binformat.py) · [Native loader](../src/facex_mfn.c)
 
-## .bin v2 format
+## Evaluation
 
-```
-EFX2                     (4 bytes magic)
-version (u32 = 2)
-arch_json_len (u32)
-arch_json (UTF-8 JSON describing stages/widths/kernels/ranks)
-n_tensors (u32)
-[tensor: u32 size + raw FP32 bytes] x n_tensors
-```
-
-The tensor order is fixed by `binformat.tensor_layout(arch)` and is the
-contract between `export_bin.py` and the (parametric) C engine.
-
-The legacy v1 `EFXS` format remains supported by the engine for the
-existing EdgeFace-XS bundle; v2 is required for nano/tiny/standard
-because the engine cannot infer their shapes from the file alone.
+The [LFW evaluation script](scripts/lfw_eval.py) uses ten folds. The [project model table](../README.md#models-and-measurements) lists the historical scores and fold variation for the released variants. For experiments, keep the checkpoint, alignment, preprocessing and evaluation pairs with the result.

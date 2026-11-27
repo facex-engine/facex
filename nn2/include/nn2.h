@@ -39,7 +39,7 @@ void nn2_free(NN2* ctx);
 /* Config */
 void nn2_set_conf_threshold(NN2* ctx, float threshold);  /* default 0.25 */
 void nn2_set_nms_threshold(NN2* ctx, float threshold);    /* default 0.45 */
-void nn2_set_input_size(NN2* ctx, int size);              /* 320 or 640, default from weights */
+void nn2_set_input_size(NN2* ctx, int size);              /* Multiple of 32 through 640. Retains the old size if workspace growth fails. */
 
 const char* nn2_version(void);
 

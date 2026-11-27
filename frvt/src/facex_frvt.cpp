@@ -6,8 +6,8 @@
  *   facex_landmark.onnx   — 98-point WFLW landmarks (112x112 RGB)
  *   facex_xs.onnx         — 512-dim recognition embedding (112x112 RGB, L2 normalized)
  *
- * Each template is a fixed-size 512 × 4 = 2048-byte L2-normalized float32 vector.
- * Match = cosine similarity rescaled to [0, 1].
+ * Each template is a 5-byte header plus 512 normalized float32 values (2053 bytes).
+ * Match = cosine similarity rescaled to [0, 1000].
  *
  * Build for Linux x86_64 (NIST evaluation platform):
  *   cmake -S . -B build -DONNXRUNTIME_ROOT=/path/to/onnxruntime
@@ -15,6 +15,7 @@
  *   -> libfrvt_11_facex_001.so
  */
 
+#include "alignment.hpp"
 #include "frvt11.h"
 #include "frvt_structs.h"
 
@@ -55,78 +56,6 @@ constexpr int LM_SIZE  = 112;
 constexpr int REC_SIZE = 112;
 constexpr int EMB_DIM  = 512;
 
-// ===== Similarity transform (rotation + uniform scale + translation) =====
-// Umeyama algorithm minimizing sum of squared errors between two point sets.
-// Inputs: src[5][2] (detected) and dst[5][2] (template). Output: 2x3 affine M.
-static void umeyama_5pt(const float src[5][2], const float dst[5][2], float M[6])
-{
-    float src_cx = 0, src_cy = 0, dst_cx = 0, dst_cy = 0;
-    for (int i = 0; i < 5; i++) {
-        src_cx += src[i][0]; src_cy += src[i][1];
-        dst_cx += dst[i][0]; dst_cy += dst[i][1];
-    }
-    src_cx /= 5; src_cy /= 5; dst_cx /= 5; dst_cy /= 5;
-    float a = 0, b = 0, c = 0;
-    for (int i = 0; i < 5; i++) {
-        float sx = src[i][0] - src_cx, sy = src[i][1] - src_cy;
-        float dx = dst[i][0] - dst_cx, dy = dst[i][1] - dst_cy;
-        a += sx*dx + sy*dy;
-        b += sx*dy - sy*dx;
-        c += sx*sx + sy*sy;
-    }
-    float scale = std::hypot(a, b) / std::max(c, 1e-6f);
-    float cos_t = a / std::hypot(a, b);
-    float sin_t = b / std::hypot(a, b);
-    M[0] = scale * cos_t;   M[1] = -scale * sin_t;
-    M[3] = scale * sin_t;   M[4] =  scale * cos_t;
-    M[2] = dst_cx - M[0] * src_cx - M[1] * src_cy;
-    M[5] = dst_cy - M[3] * src_cx - M[4] * src_cy;
-}
-
-// Warp 24-bit RGB image into a dst×dst RGB plane using inverse affine + bilinear.
-// We compute the inverse of the 2x3 forward map, then for each dst pixel sample src.
-static void warp_affine_bilinear(
-    const uint8_t* src, int sw, int sh, int sd,
-    uint8_t* dst, int dst_size, const float fwd[6])
-{
-    float det = fwd[0] * fwd[4] - fwd[1] * fwd[3];
-    if (std::fabs(det) < 1e-9f) det = 1e-9f;
-    float inv[6];
-    inv[0] =  fwd[4] / det; inv[1] = -fwd[1] / det;
-    inv[3] = -fwd[3] / det; inv[4] =  fwd[0] / det;
-    inv[2] = -(inv[0] * fwd[2] + inv[1] * fwd[5]);
-    inv[5] = -(inv[3] * fwd[2] + inv[4] * fwd[5]);
-
-    int channels = (sd == 24) ? 3 : 1;
-    for (int y = 0; y < dst_size; y++) {
-        for (int x = 0; x < dst_size; x++) {
-            float fx = inv[0] * x + inv[1] * y + inv[2];
-            float fy = inv[3] * x + inv[4] * y + inv[5];
-            int x0 = static_cast<int>(std::floor(fx));
-            int y0 = static_cast<int>(std::floor(fy));
-            int x1 = x0 + 1, y1 = y0 + 1;
-            float wx = fx - x0, wy = fy - y0;
-            uint8_t* dp = dst + (y * dst_size + x) * 3;
-            if (x0 < 0 || x1 >= sw || y0 < 0 || y1 >= sh) {
-                dp[0] = dp[1] = dp[2] = 0;
-                continue;
-            }
-            const uint8_t* p00 = src + (y0 * sw + x0) * channels;
-            const uint8_t* p01 = src + (y0 * sw + x1) * channels;
-            const uint8_t* p10 = src + (y1 * sw + x0) * channels;
-            const uint8_t* p11 = src + (y1 * sw + x1) * channels;
-            for (int c = 0; c < 3; c++) {
-                int sc = (channels == 3) ? c : 0;
-                float v = (1 - wx) * (1 - wy) * p00[sc]
-                        + wx       * (1 - wy) * p01[sc]
-                        + (1 - wx) * wy       * p10[sc]
-                        + wx       * wy       * p11[sc];
-                dp[c] = static_cast<uint8_t>(std::min(255.0f, std::max(0.0f, v + 0.5f)));
-            }
-        }
-    }
-}
-
 // Convert HWC RGB uint8 → CHW float32 normalized (val - 127.5) / 128.
 static void hwc_to_chw_norm(const uint8_t* src, int size, float* dst)
 {
@@ -154,7 +83,7 @@ static void letterbox_det(const uint8_t* src, int sw, int sh, int sd,
             int x0 = static_cast<int>(fx), y0 = static_cast<int>(fy);
             if (x0 >= sw) x0 = sw - 1;
             if (y0 >= sh) y0 = sh - 1;
-            const uint8_t* p = src + (y0 * sw + x0) * channels;
+            const uint8_t* p = src + (static_cast<size_t>(y0) * sw + x0) * channels;
             uint8_t* dp = dst + (y * DET_SIZE + x) * 3;
             if (channels == 3) {
                 dp[0] = p[0]; dp[1] = p[1]; dp[2] = p[2];
@@ -170,9 +99,16 @@ struct Detection { float x1, y1, x2, y2, score; };
 
 static float sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
 
+static bool float_tensor_size(const Ort::Value& tensor, size_t count)
+{
+    if (!tensor.IsTensor()) return false;
+    auto info = tensor.GetTensorTypeAndShapeInfo();
+    return info.GetElementType() == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT &&
+           info.GetElementCount() == count;
+}
+
 static std::vector<Detection> decode_detector(
     const std::vector<Ort::Value>& outs,
-    const std::vector<const char*>& names,
     float scoreThr = 0.40f)
 {
     constexpr int STRIDES[3] = {8, 16, 32};
@@ -180,9 +116,10 @@ static std::vector<Detection> decode_detector(
     for (int li = 0; li < 3; li++) {
         int s = STRIDES[li];
         // Outputs are ordered: cls_p3, box_p3, kps_p3, cls_p4, ...
-        const float* cls = outs[li * 3 + 0].GetTensorData<float>();
-        const float* box = outs[li * 3 + 1].GetTensorData<float>();
         int H = DET_SIZE / s, W = DET_SIZE / s, N = H * W;
+        if (!float_tensor_size(outs[li * 3], N) || !float_tensor_size(outs[li * 3 + 1], 4 * N)) return {};
+        const float* cls = outs[li * 3].GetTensorData<float>();
+        const float* box = outs[li * 3 + 1].GetTensorData<float>();
         for (int i = 0; i < N; i++) {
             float sc = sigmoid(cls[i]);
             if (sc < scoreThr) continue;
@@ -245,6 +182,7 @@ public:
     bool detect_align(const Image& img,
                       float kps[5][2], float bbox[4]) const
     {
+        if (!img.data || !img.width || !img.height || (img.depth != 8 && img.depth != 24)) return false;
         // 1) Detect at 320×320 letterbox
         std::vector<uint8_t> letter(DET_SIZE * DET_SIZE * 3);
         float scale; letterbox_det(img.data.get(), img.width, img.height, img.depth,
@@ -264,7 +202,7 @@ public:
         };
         auto outs = det_->Run(Ort::RunOptions{nullptr}, &inName, &inTensor, 1,
                                outNames.data(), outNames.size());
-        auto dets = decode_detector(outs, outNames);
+        auto dets = decode_detector(outs);
         if (dets.empty()) return false;
 
         // Pick largest face
@@ -293,7 +231,7 @@ public:
                 float fy_ = sy + (y + 0.5f) * side / LM_SIZE;
                 int xi = std::max(0, std::min(img.width - 1, static_cast<int>(fx_)));
                 int yi = std::max(0, std::min(img.height - 1, static_cast<int>(fy_)));
-                const uint8_t* p = img.data.get() + (yi * img.width + xi) * channels;
+                const uint8_t* p = img.data.get() + (static_cast<size_t>(yi) * img.width + xi) * channels;
                 uint8_t* dp = faceCrop.data() + (y * LM_SIZE + x) * 3;
                 if (channels == 3) { dp[0] = p[0]; dp[1] = p[1]; dp[2] = p[2]; }
                 else { dp[0] = dp[1] = dp[2] = p[0]; }
@@ -308,6 +246,7 @@ public:
         const char* lmOutName = "landmarks";   // model exports a single (1, 196) tensor
         auto lmOuts = lm_->Run(Ort::RunOptions{nullptr}, &lmInName, &lmTensor, 1,
                                 &lmOutName, 1);
+        if (!float_tensor_size(lmOuts[0], 196)) return false;
         const float* lmData = lmOuts[0].GetTensorData<float>();
         // 98 (x, y) in [0, 1] of the cropped 112×112 → map back to original
         auto cropToOrig = [&](float xc, float yc, float out[2]) {
@@ -333,9 +272,9 @@ public:
     bool extract_embedding(const Image& img, const float kps[5][2], float emb[EMB_DIM]) const
     {
         float M[6];
-        umeyama_5pt(kps, ARC_TEMPLATE, M);
+        if (!facex_frvt::umeyama_5pt(kps, ARC_TEMPLATE, M)) return false;
         std::vector<uint8_t> aligned(REC_SIZE * REC_SIZE * 3);
-        warp_affine_bilinear(img.data.get(), img.width, img.height, img.depth,
+        facex_frvt::warp_affine_bilinear(img.data.get(), img.width, img.height, img.depth,
                               aligned.data(), REC_SIZE, M);
         std::vector<float> recInput(3 * REC_SIZE * REC_SIZE);
         hwc_to_chw_norm(aligned.data(), REC_SIZE, recInput.data());
@@ -346,11 +285,13 @@ public:
             mem, recInput.data(), recInput.size(), shape.data(), shape.size());
         const char* in = "input"; const char* out = "embedding";
         auto outs = rec_->Run(Ort::RunOptions{nullptr}, &in, &t, 1, &out, 1);
+        if (!float_tensor_size(outs[0], EMB_DIM)) return false;
         const float* e = outs[0].GetTensorData<float>();
         // re-normalize defensively
         float norm = 0;
         for (int i = 0; i < EMB_DIM; i++) norm += e[i] * e[i];
-        norm = std::sqrt(std::max(norm, 1e-12f));
+        if (!(norm > 0) || !std::isfinite(norm)) return false;
+        norm = std::sqrt(norm);
         for (int i = 0; i < EMB_DIM; i++) emb[i] = e[i] / norm;
         return true;
     }
@@ -377,14 +318,28 @@ static void pack_template(const float* emb, bool valid, std::vector<uint8_t>& ou
     std::memcpy(out.data() + 5, emb, EMB_DIM * sizeof(float));
 }
 
-static bool unpack_template(const std::vector<uint8_t>& t, bool& valid, const float*& emb)
+static bool unpack_template(const std::vector<uint8_t>& t, bool& valid, std::array<float, EMB_DIM>& emb)
 {
     if (t.size() != TEMPL_SIZE) return false;
     uint32_t m; std::memcpy(&m, t.data(), 4);
-    if (m != TEMPL_MAGIC) return false;
+    if (m != TEMPL_MAGIC || t[4] > 1) return false;
     valid = (t[4] == 1);
-    emb = reinterpret_cast<const float*>(t.data() + 5);
+    std::memcpy(emb.data(), t.data() + 5, EMB_DIM * sizeof(float));
     return true;
+}
+
+static EyePair eyes_for_image(const Image& image, const float kps[5][2])
+{
+    // The first ArcFace landmark is on the left of the image, the subject's right.
+    auto inside = [&](const float p[2]) {
+        return p[0] >= 0 && p[0] < image.width && p[1] >= 0 && p[1] < image.height;
+    };
+    bool left = inside(kps[1]), right = inside(kps[0]);
+    return EyePair(left, right,
+                   left ? static_cast<uint16_t>(kps[1][0]) : 0,
+                   left ? static_cast<uint16_t>(kps[1][1]) : 0,
+                   right ? static_cast<uint16_t>(kps[0][0]) : 0,
+                   right ? static_cast<uint16_t>(kps[0][1]) : 0);
 }
 
 // ===== Concrete Interface implementation =====
@@ -418,16 +373,12 @@ public:
                 engine_.extract_embedding(faces[i], kps, emb)) {
                 for (int j = 0; j < EMB_DIM; j++) sum[j] += emb[j];
                 valid_n++;
-                eyeCoordinates.emplace_back(
-                    true, true,
-                    static_cast<uint16_t>(kps[0][0]),
-                    static_cast<uint16_t>(kps[0][1]),
-                    static_cast<uint16_t>(kps[1][0]),
-                    static_cast<uint16_t>(kps[1][1]));
+                eyeCoordinates.push_back(eyes_for_image(faces[i], kps));
             } else {
                 eyeCoordinates.emplace_back();
             }
         }
+        eyeCoordinates.resize(faces.size());
         // L2-normalize the sum
         float norm = 0;
         for (int j = 0; j < EMB_DIM; j++) norm += sum[j] * sum[j];
@@ -450,6 +401,8 @@ public:
         std::vector<std::vector<uint8_t>>& templs,
         std::vector<EyePair>& eyeCoordinates) override
     {
+        templs.clear();
+        eyeCoordinates.clear();
         // Single-image multi-face path. We currently detect+template the largest face.
         float kps[5][2], bbox[4], emb[EMB_DIM];
         std::vector<uint8_t> t;
@@ -457,12 +410,7 @@ public:
             engine_.extract_embedding(image, kps, emb)) {
             pack_template(emb, true, t);
             templs.push_back(t);
-            eyeCoordinates.emplace_back(
-                true, true,
-                static_cast<uint16_t>(kps[0][0]),
-                static_cast<uint16_t>(kps[0][1]),
-                static_cast<uint16_t>(kps[1][0]),
-                static_cast<uint16_t>(kps[1][1]));
+            eyeCoordinates.push_back(eyes_for_image(image, kps));
         } else {
             float zero[EMB_DIM] = {0};
             pack_template(zero, false, t);
@@ -477,7 +425,8 @@ public:
         const std::vector<uint8_t>& enroll,
         double& score) override
     {
-        bool va, ea; const float* e1; const float* e2;
+        bool va, ea;
+        std::array<float, EMB_DIM> e1, e2;
         if (!unpack_template(verif, va, e1) || !unpack_template(enroll, ea, e2)) {
             score = -1;
             return ReturnStatus(ReturnCode::TemplateFormatError);
@@ -489,7 +438,11 @@ public:
         double dot = 0;
         for (int i = 0; i < EMB_DIM; i++) dot += static_cast<double>(e1[i]) * e2[i];
         // Map cosine [-1, 1] → [0, 1] then to [0, 1000] for higher-resolution score
-        score = (dot + 1.0) * 500.0;
+        if (!std::isfinite(dot)) {
+            score = -1;
+            return ReturnStatus(ReturnCode::TemplateFormatError);
+        }
+        score = (std::max(-1.0, std::min(1.0, dot)) + 1.0) * 500.0;
         return ReturnStatus(ReturnCode::Success);
     }
 

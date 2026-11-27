@@ -38,11 +38,7 @@ extern void conv2d_hwc(const float* in_hwc, int Cin, int H, int W,
                        const float* w_packed, const float* b, int Cout,
                        int K, int stride, float* out_hwc);
 
-/* PackedFP32 type — must match definition in edgeface_engine.c */
-typedef struct {
-    float* data;
-    int K, N;
-} PackedFP32;
+#include "edgeface_packed.h"
 
 /* Block primitives from edgeface_engine.c (now exposed by removing static). */
 extern void convnext_block(float* x_hwc, int H, int W, int C,
@@ -474,6 +470,7 @@ static void v2_pack_xca(V2_XCA *x, int C, int rank, int hidden)
 
 int v2_engine_init(const char *path, V2_Engine *e)
 {
+    memset(e, 0, sizeof(*e));
     /* Load file into memory */
     FILE *f = fopen(path, "rb");
     if (!f) return -1;

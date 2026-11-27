@@ -181,16 +181,22 @@ def embed():
 
     with preparation_slot(_embed_capacity):
         f = request.files['file']
-        img = Image.open(f.stream).convert('RGB').resize((112, 112))
-        arr = np.array(img, dtype=np.float32) / 127.5 - 1.0  # normalize to [-1, 1]
+        try:
+            with Image.open(f.stream) as uploaded:
+                img = uploaded.convert('RGB').resize((112, 112))
+                arr = np.asarray(img, dtype=np.float32)
+            arr /= 127.5
+            arr -= 1
+        except (OSError, ValueError, Image.DecompressionBombError):
+            return jsonify(error='Invalid image'), 400
 
-        t0 = time.time()
+        t0 = time.perf_counter()
         try:
             emb = embed_in_worker(arr)
         except OSError:
             app.logger.exception("Embedding worker failed")
             return jsonify({"error": "Face embedding unavailable"}), 503
-        ms = (time.time() - t0) * 1000
+        ms = (time.perf_counter() - t0) * 1000
 
     return jsonify({
         'embedding': emb.tolist(),
@@ -278,4 +284,4 @@ def detect():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=8080, debug=False)

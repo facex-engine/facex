@@ -1,10 +1,10 @@
 # nn2 — Pure C YOLO Inference Engine
 
-**1.50x faster than ONNX Runtime. Zero dependencies. 520KB binary. 70 cameras on one CPU.**
+NN2 runs object detection and motion-gated NVR processing on a CPU. Its C inference kernels include scalar, AVX2 and AVX-512 implementations. The NVR service and image-detection command have separate entry points.
 
-Built from scratch in pure C with hand-tuned AVX-512 SIMD. No frameworks, no libraries, no GPU required.
+## Historical measurements
 
-## Performance
+These measurements were recorded on an Intel i5-11500. Single-frame timings cover inference. The NVR figures include skipped frames and depend on scene motion, stream decoding and the configured detection interval.
 
 ### Single-frame inference (i5-11500, 6 cores / 12 threads)
 
@@ -21,12 +21,16 @@ Built from scratch in pure C with hand-tuned AVX-512 SIMD. No frameworks, no lib
 |--------|-------|
 | Average per frame | **0.56ms** |
 | Effective throughput | **1,746 FPS** |
-| Camera capacity (25fps) | **~70 cameras** |
+| Equivalent frame rate at 25 fps per stream | **~70 streams** (arithmetic estimate) |
 | vs naive inference | **14.8x faster** |
 
 Detection accuracy: 4/4 on bus.jpg (person 86%, bus 80%, person 72%, person 71%) — matches PyTorch reference.
 
 ## Quick Start
+
+On x86-64 Linux, run `make -j2 -C nn2` from the FaceX repository root. This builds `nn2`, `nn2_img`, `nn2_nvr` and `nanodet`. Run `./nn2/nn2_img weights.bin photo.jpg` with the appropriate exported YOLO weights. The runtime selects the GEMM paths enabled by the compiler target. A single NN2 process shares a worker pool, so serialize pool lifecycle and detector calls or use separate processes.
+
+Run the commands below from `nn2/` for the Windows build and its additional NVR service.
 
 ```bash
 # Build everything
@@ -254,10 +258,4 @@ Smart pipeline: 0.56ms avg = 1,638x from start
 
 ## License
 
-Apache 2.0. Free for commercial use, attribution required (see LICENSE).
-
-Copyright (c) 2026 Baurzhan Atinov.
-
-If you ship `nn2` in a product, an attribution line in your README or
-About page is appreciated, not required by the license. Contributions
-via PR welcome.
+The NN2 source includes an [Apache 2.0 license](LICENSE). The export commands use external YOLO models. Refer to the terms for the specific model you supply.

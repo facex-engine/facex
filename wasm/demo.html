@@ -67,7 +67,7 @@ canvas.overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
 
 <div class="header">
   <h1>Face<span>X</span></h1>
-  <p>74 KB WASM. No server. Everything stays on your device.</p>
+  <p>Local face detection and recognition with WebAssembly.</p>
 </div>
 
 <div id="status" class="status loading">Checking browser support...</div>
@@ -107,10 +107,10 @@ canvas.overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
 
   <div class="info">
     <h3>How it works</h3>
-    <p><code>detect.wasm</code> (29 KB) finds faces with RetinaFace INT8 + relaxed SIMD.</p>
-    <p><code>facex.wasm</code> (44 KB) computes 512-dim embeddings via EdgeFace-XS.</p>
+    <p><code>detect.wasm</code> runs the YuNet face detector.</p>
+    <p><code>facex.wasm</code> computes 512-component EdgeFace XS embeddings.</p>
     <p>5-point alignment ensures accurate matching at any head angle.</p>
-    <p>Total: <code>74 KB</code> engine + <code>7.7 MB</code> weights (cached after first load).</p>
+    <p>Both model files are cached after their first successful download.</p>
   </div>
 </div>
 
@@ -118,6 +118,9 @@ canvas.overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
 <script src="facex.js"></script>
 <script src="align.js"></script>
 <script src="liveness.js"></script>
+<script src="simd_check.js"></script>
+<script src="cache.js"></script>
+<script src="facex-sdk.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const video = $('video');
@@ -126,7 +129,7 @@ const ctx = overlay.getContext('2d');
 const refCanvas = $('refCanvas');
 const refCtx = refCanvas.getContext('2d', { willReadFrequently: true });
 
-let DetMod, FxMod, detH, fxH;
+const sdk = new FaceXSDK();
 let refEmb = null, running = false;
 const liveness = new LivenessDetector();
 
@@ -137,38 +140,10 @@ const cropCv = document.createElement('canvas');
 cropCv.width = 112; cropCv.height = 112;
 const cropCtxA = cropCv.getContext('2d', { willReadFrequently: true });
 
-// ===== SIMD Check =====
-function checkSimd() {
-  try {
-    return WebAssembly.validate(new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,253,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,11]));
-  } catch(e) { return false; }
-}
-
-// ===== IndexedDB Cache =====
-async function cachedFetch(url, key) {
-  try {
-    const db = await new Promise((res, rej) => {
-      const r = indexedDB.open('facex-cache', 1);
-      r.onupgradeneeded = () => r.result.createObjectStore('w');
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-    });
-    const cached = await new Promise(r => {
-      const tx = db.transaction('w','readonly');
-      const req = tx.objectStore('w').get(key);
-      req.onsuccess = () => r(req.result); req.onerror = () => r(null);
-    });
-    if (cached) return new Uint8Array(cached);
-    const buf = await fetch(url).then(r => r.arrayBuffer());
-    try { const tx = db.transaction('w','readwrite'); tx.objectStore('w').put(buf, key); } catch(e) {}
-    return new Uint8Array(buf);
-  } catch(e) { return new Uint8Array(await fetch(url).then(r => r.arrayBuffer())); }
-}
-
 // ===== Init =====
 async function init() {
   const s = $('status');
-  if (!checkSimd()) {
+  if (!checkWasmSimd()) {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     showError(isIOS
       ? 'WebAssembly SIMD not supported in this browser. On iOS, use Safari (not Chrome).'
@@ -177,19 +152,9 @@ async function init() {
   }
   try {
     s.textContent = 'Loading engines...'; s.className = 'status loading';
-    [DetMod, FxMod] = await Promise.all([FaceDetModule(), FaceXModule()]);
-
-    s.textContent = 'Loading weights (cached after first load)...';
-    const [dw, fw] = await Promise.all([
-      cachedFetch('https://github.com/facex-engine/facex/releases/download/v1.0.0/det_500m_int8.bin', 'det'), cachedFetch('https://github.com/facex-engine/facex/releases/download/v1.0.0/edgeface_xs_fp32.bin', 'emb')
-    ]);
-    DetMod.FS.writeFile('/d.bin', dw); FxMod.FS.writeFile('/e.bin', fw);
-
-    detH = DetMod.cwrap('detect_init','number',['string'])('/d.bin');
-    fxH = FxMod.cwrap('facex_init','number',['string','string'])('/e.bin', null);
-    if (!detH || !fxH) throw new Error('Engine init failed');
-
-    s.textContent = 'Ready — 74 KB engines loaded'; s.className = 'status ready';
+    sdk.onProgress = message => { s.textContent = message; };
+    await sdk.load();
+    s.textContent = 'Ready'; s.className = 'status ready';
     $('btnStart').disabled = false;
     $('resultBar').textContent = 'Click "Start Camera" to begin';
   } catch(e) { showError(e.message); }
@@ -214,65 +179,18 @@ $('btnStart').onclick = async () => {
 
 // ===== Detect =====
 function runDetect() {
-  const W = video.videoWidth, H = video.videoHeight;
-  const ds = 160;
-  const detCv = document.createElement('canvas'); detCv.width = ds; detCv.height = ds;
-  const dCtx = detCv.getContext('2d', { willReadFrequently: true });
-  const scale = Math.min(ds/W, ds/H);
-  const nw = Math.round(W*scale), nh = Math.round(H*scale);
-  const dx = (ds-nw)/2, dy = (ds-nh)/2;
-  dCtx.fillStyle = '#000'; dCtx.fillRect(0,0,ds,ds);
-  dCtx.drawImage(video, dx, dy, nw, nh);
-  const img = dCtx.getImageData(0,0,ds,ds);
-
-  const nPx = ds*ds*3;
-  const inP = DetMod._malloc(nPx*4);
-  const heap = DetMod.HEAPF32;
-  const b = inP>>2;
-  for (let i=0; i<ds*ds; i++) {
-    heap[b+i*3] = img.data[i*4]/127.5-1; heap[b+i*3+1] = img.data[i*4+1]/127.5-1; heap[b+i*3+2] = img.data[i*4+2]/127.5-1;
-  }
-  const outP = DetMod._malloc(15*4*10);
-  const df = DetMod.cwrap('detect_faces','number',['number','number','number','number','number','number']);
-  const t0 = performance.now();
-  const n = df(detH, inP, ds, ds, outP, 10);
-  const detMs = performance.now() - t0;
-
-  const faces = [];
-  for (let i=0; i<n; i++) {
-    const fb = (outP>>2)+i*15;
-    const f = DetMod.HEAPF32;
-    faces.push({
-      x1:(f[fb]-dx)/scale, y1:(f[fb+1]-dy)/scale, x2:(f[fb+2]-dx)/scale, y2:(f[fb+3]-dy)/scale,
-      score:f[fb+4], kps: Array.from({length:10}, (_,j) => (f[fb+5+j]-(j%2===0?dx:dy))/scale)
-    });
-  }
-  DetMod._free(inP); DetMod._free(outP);
-  return { faces, detMs };
+  const start = performance.now();
+  const faces = sdk.detect(video);
+  return {faces, detMs: performance.now() - start};
 }
 
-// ===== Embed =====
-function runEmbed(imgData) {
-  const N=112*112*3;
-  const inP = FxMod._malloc(N*4), outP = FxMod._malloc(512*4);
-  const heap = FxMod.HEAPF32, b = inP>>2;
-  for (let i=0; i<112*112; i++) {
-    heap[b+i*3] = imgData.data[i*4]/127.5-1; heap[b+i*3+1] = imgData.data[i*4+1]/127.5-1; heap[b+i*3+2] = imgData.data[i*4+2]/127.5-1;
-  }
-  const t0 = performance.now();
-  FxMod.cwrap('facex_embed','number',['number','number','number'])(fxH, inP, outP);
-  const embMs = performance.now() - t0;
-  const emb = new Float32Array(512);
-  emb.set(heap.subarray(outP>>2, (outP>>2)+512));
-  FxMod._free(inP); FxMod._free(outP);
-  return { emb, embMs };
+function runEmbed(image) {
+  const start = performance.now();
+  const emb = sdk.embed(image);
+  return {emb, embMs: performance.now() - start};
 }
 
-function cosSim(a,b) {
-  let d=0,na=0,nb=0;
-  for (let i=0;i<512;i++) { d+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; }
-  return d/Math.sqrt(na*nb);
-}
+function cosSim(a, b) { return sdk.cosSim(a, b); }
 
 // ===== Align + Crop =====
 function alignAndCrop(face) {

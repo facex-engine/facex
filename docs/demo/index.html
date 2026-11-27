@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FaceX — 576-point face mesh (in-browser, encrypted)</title>
+<title>FaceX face mesh and recognition demo</title>
+<meta name="description" content="Try a 478-vertex face mesh, 98 facial landmarks and local face recognition in your browser.">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -189,18 +190,18 @@
   <header class="hero">
     <img src="logo.jpg" alt="FaceX">
     <div>
-      <h1>Face<span>X</span> &mdash; 576-point face mesh</h1>
+      <h1>Face<span>X</span> &mdash; face mesh and recognition</h1>
       <div class="tag">Detect &middot; Mesh &middot; Recognize &middot; Anti-spoof &mdash; entirely in your browser</div>
     </div>
   </header>
 
   <div class="pipeline">
-    <span class="chip ours">✦ ours <span class="num">401KB</span> <span class="src">detect</span></span>
-    <span class="chip ours">✦ ours <span class="num">1.1MB</span> <span class="src">98pt landmarks</span></span>
-    <span class="chip ours">✦ ours <span class="num">5.6MB</span> <span class="src">478pt 3D mesh</span></span>
-    <span class="chip ours">✦ ours <span class="num">1.8MB</span> <span class="src">recognition</span></span>
-    <span class="chip ours">✦ ours <span class="num">187KB</span> <span class="src">smile</span></span>
-    <span class="chip apache">Apache <span class="num">3.4MB</span> <span class="src">anti-spoof</span></span>
+    <span class="chip ours"><span class="num">401 KiB</span> <span class="src">detect</span></span>
+    <span class="chip ours"><span class="num">4.4 MiB</span> <span class="src">98pt landmarks</span></span>
+    <span class="chip ours"><span class="num">5.6 MiB</span> <span class="src">478pt 3D mesh</span></span>
+    <span class="chip ours"><span class="num">1.7 MiB</span> <span class="src">recognition</span></span>
+    <span class="chip ours"><span class="num">187 KiB</span> <span class="src">smile</span></span>
+    <span class="chip apache"><span class="num">3.3 MiB</span> <span class="src">anti-spoof</span></span>
   </div>
 
   <div id="status" class="status loading">Loading…</div>
@@ -234,20 +235,20 @@
   </div>
 
   <div class="specs">
-    <div class="spec"><div class="v">576</div><div class="k">mesh points</div></div>
-    <div class="spec"><div class="v">~17 MB</div><div class="k">encrypted weights</div></div>
+    <div class="spec"><div class="v">478</div><div class="k">mesh vertices</div></div>
+    <div class="spec"><div class="v">15.6 MiB</div><div class="k">encrypted weights</div></div>
     <div class="spec"><div class="v">AES-256</div><div class="k">WebCrypto-GCM</div></div>
     <div class="spec"><div class="v">0 servers</div><div class="k">frames stay local</div></div>
   </div>
 
   <div class="info">
-    <p><strong>Pipeline.</strong> Every frame: <em>our</em> face detector (FCOS-style, 100K params, trained from scratch on WIDER FACE) → 98-point WFLW landmark ConvNet → 478-point 3D mesh distilled from MediaPipe → 512-dim embedding (MobileFaceNet + ArcFace on MS1M, LFW 96.9%) → MiniFASNet anti-spoof ensemble.</p>
-    <p><strong>All custom (except antispoof).</strong> Detector, landmarks, 3D mesh, recognition &mdash; trained from scratch. Only anti-spoof uses MinivisionAI's MiniFASNet under Apache 2.0. Every weight is AES-256-GCM encrypted on disk and decrypted in-browser via WebCrypto.</p>
+    <p>Detection locates the face. The landmark model estimates 98 points, and the 3D model estimates 478 vertices. Face ID uses the Tiny recognition model. The smile and anti-spoofing modes use separate models.</p>
+    <p>Your camera frames are processed locally. The page downloads ONNX Runtime and the encrypted model files at startup. <a href="https://github.com/facex-engine/facex#models-and-measurements">Model details and benchmarks</a></p>
   </div>
 
   <div class="footer">
     <a href="https://github.com/facex-engine/facex" target="_blank">GitHub</a> &middot;
-    Apache 2.0 &middot;
+    <a href="https://github.com/facex-engine/facex#licensing-and-provenance">Licenses and provenance</a> &middot;
     Made by <a href="https://github.com/bauratynov" target="_blank">Baurzhan Atinov</a>
   </div>
 </div>
@@ -275,7 +276,7 @@ let denseLevel = 'full';
 let denseTemplate = null;     // { T: Float32Array(M*98), levels: {low,mid,full}, M, N }
 let frameCount = 0, lastFpsT = performance.now(), fps = 0;
 let detectMs = 0, lmMs = 0, recMs = 0;
-let refEmb = null;       // 256-dim reference (when locked)
+let refEmb = null;       // Tiny reference embedding while locked
 let lastSim = null;      // most recent cosine similarity to ref
 let lastPts2d = null, lastBox = null, lastFaceCount = 0;
 let lastLive = null, lastSpoof = null;  // P(live), P(spoof) from antispoof model
@@ -753,7 +754,7 @@ function cosSim(a, b) {
   return s;
 }
 
-// Run nano recognition on the SAME aligned crop we use for landmarks.
+// Recognition uses the same aligned crop as the landmark model.
 // Returns Float32Array of length 256 (already L2-normalized by the model).
 // 478-point 3D landmark prediction. Returns Array of [x, y, z] of length 478.
 // x, y in pixels of the ORIGINAL video (not normalized), z in roughly [-0.3, 0.3].

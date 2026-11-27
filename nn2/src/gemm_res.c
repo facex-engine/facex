@@ -10,12 +10,11 @@
 
 #ifdef __AVX512F__
 
-#include "fast_exp.h"
+#include "gemm_vector.h"
 
 #define NR512 32
 #define KC_BLOCK 256
 
-static inline __m512 _res_silu512(__m512 x) { return _mm512_silu_fast(x); }
 
 typedef struct {
     int M, K, N;
@@ -54,7 +53,7 @@ static void res_worker(void* arg, int start, int end) {
                 #define RK(off) { \
                     const float* bp = bp_base + (k+(off)) * g->N; \
                     const float* a = ap + (k+(off)) * NN2_MR; \
-                    __m512 b0=_mm512_loadu_ps(bp), b1=_mm512_loadu_ps(bp+16); __m512 va; \
+                    __m512 b0=nn2_load_columns(bp,nr,0), b1=nn2_load_columns(bp,nr,16); __m512 va; \
                     va=_mm512_set1_ps(a[0]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01); \
                     va=_mm512_set1_ps(a[1]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11); \
                     va=_mm512_set1_ps(a[2]);c20=_mm512_fmadd_ps(va,b0,c20);c21=_mm512_fmadd_ps(va,b1,c21); \
@@ -67,7 +66,7 @@ static void res_worker(void* arg, int start, int end) {
             for (; k < kb; k++) {
                 const float* bp = bp_base + k * g->N;
                 const float* a = ap + k * NN2_MR;
-                __m512 b0=_mm512_loadu_ps(bp), b1=_mm512_loadu_ps(bp+16); __m512 va;
+                __m512 b0=nn2_load_columns(bp,nr,0), b1=nn2_load_columns(bp,nr,16); __m512 va;
                 va=_mm512_set1_ps(a[0]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01);
                 va=_mm512_set1_ps(a[1]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11);
                 va=_mm512_set1_ps(a[2]);c20=_mm512_fmadd_ps(va,b0,c20);c21=_mm512_fmadd_ps(va,b1,c21);
@@ -83,9 +82,9 @@ static void res_worker(void* arg, int start, int end) {
         #define FR(i,lo,hi) if(i<mr){ \
             __m512 vb=_mm512_set1_ps(g->bias[m+(i)]); \
             lo=_mm512_add_ps(lo,vb); hi=_mm512_add_ps(hi,vb); \
-            if(g->act==1){lo=_res_silu512(lo);hi=_res_silu512(hi);} \
-            lo=_mm512_add_ps(lo,_mm512_loadu_ps(Rp+i*g->ldr)); \
-            hi=_mm512_add_ps(hi,_mm512_loadu_ps(Rp+i*g->ldr+16)); \
+            lo=nn2_activate_vector(lo,g->act);hi=nn2_activate_vector(hi,g->act); \
+            lo=_mm512_add_ps(lo,nn2_load_columns(Rp+i*g->ldr,nr,0)); \
+            hi=_mm512_add_ps(hi,nn2_load_columns(Rp+i*g->ldr,nr,16)); \
             if(nr>=32){_mm512_storeu_ps(Cp+i*g->ldc,lo);_mm512_storeu_ps(Cp+i*g->ldc+16,hi);} \
             else{__mmask16 ml=(nr>=16)?0xFFFF:((__mmask16)1<<nr)-1,mh=(nr<=16)?0:((__mmask16)1<<(nr-16))-1; \
                 _mm512_mask_storeu_ps(Cp+i*g->ldc,ml,lo);if(mh)_mm512_mask_storeu_ps(Cp+i*g->ldc+16,mh,hi);}}

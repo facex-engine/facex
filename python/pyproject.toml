@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "facex"
 version = "0.1.0"
-description = "Python binding for FaceX face detection + recognition"
+description = "Local YuNet face detection, EdgeFace embeddings and identity galleries with native library and CLI backends"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "Apache-2.0"}

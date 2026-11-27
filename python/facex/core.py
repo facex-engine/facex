@@ -6,6 +6,8 @@ import ctypes
 import ctypes.util
 import math
 import os
+import operator
+import threading
 import platform
 import struct
 import subprocess
@@ -113,7 +115,7 @@ def _find_cli() -> Optional[str]:
 
     system = platform.system()
     ext = ".exe" if system == "Windows" else ""
-    names = [f"facex-cli{ext}", f"facex-example{ext}"]
+    names = [f"facex-cli{ext}"]
 
     pkg_dir = Path(__file__).resolve().parent
     facex_root = pkg_dir.parent.parent
@@ -141,9 +143,10 @@ def _find_weights() -> Tuple[Optional[str], Optional[str]]:
 
     pkg_dir = Path(__file__).resolve().parent
     facex_root = pkg_dir.parent.parent
+    facex_root = Path(os.environ.get("FACEX_ROOT") or facex_root)
     weights_dir = facex_root / "weights"
 
-    embed_names = ["embed.bin", "edgeface_fp32.bin", "edgeface.bin"]
+    embed_names = ["edgeface_xs_fp32.bin", "embed.bin", "edgeface_fp32.bin", "edgeface.bin"]
     detect_names = ["detect.bin", "yunet_fp32.bin", "yunet.bin"]
 
     embed_path = env_embed
@@ -155,6 +158,9 @@ def _find_weights() -> Tuple[Optional[str], Optional[str]]:
             if p.is_file():
                 embed_path = str(p)
                 break
+
+    if not embed_path and (facex_root / "data/edgeface_xs_fp32.bin").is_file():
+        embed_path = str(facex_root / "data/edgeface_xs_fp32.bin")
 
     if not detect_path:
         for name in detect_names:
@@ -236,7 +242,11 @@ class FaceX:
         self._lib = None
         self._handle = None
         self._cli_path = cli_path
-        self._max_faces = max_faces
+        self._native_lock = threading.Lock()
+        self._license_key = license_key
+        self._max_faces = operator.index(max_faces)
+        if self._max_faces < 0:
+            raise ValueError("max_faces must be nonnegative")
         if input_policy not in _POLICY_THRESHOLDS:
             raise ValueError("Unknown detector input policy")
         if min_box_side not in (8, 12, 16):
@@ -248,6 +258,8 @@ class FaceX:
                 score_threshold = {8: 0.75, 12: 0.74, 16: 0.70}[min_box_side]
             else:
                 score_threshold = _POLICY_THRESHOLDS[input_policy]
+        if not (0 <= score_threshold <= 1 and 0 <= nms_threshold <= 1):
+            raise ValueError("Detector thresholds must be in [0, 1]")
         self._score_threshold = score_threshold
         self._nms_threshold = nms_threshold
 
@@ -257,7 +269,7 @@ class FaceX:
         self._detect_weights = detect_weights or auto_detect
 
         # Try ctypes first
-        lib_file = lib_path or _find_lib()
+        lib_file = lib_path or (None if cli_path else _find_lib())
         if lib_file:
             try:
                 self._init_ctypes(lib_file, license_key)
@@ -355,8 +367,8 @@ class FaceX:
                 ctypes.c_void_p, pixel, ctypes.c_int, ctypes.c_int, scalar, scalar]
 
         # Init engine
-        embed_b = self._embed_weights.encode() if self._embed_weights else None
-        detect_b = self._detect_weights.encode() if self._detect_weights else None
+        embed_b = os.fsencode(self._embed_weights) if self._embed_weights else None
+        detect_b = os.fsencode(self._detect_weights) if self._detect_weights else None
         key_b = license_key.encode() if license_key else None
 
         self._handle = self._lib.facex_init(embed_b, detect_b, key_b)
@@ -404,16 +416,19 @@ class FaceX:
             raise ValueError(f"Expected HWC RGB uint8 image, got shape {image.shape}")
 
         h, w = image.shape[:2]
-        mf = max_faces or self._max_faces
+        mf = self._max_faces if max_faces is None else operator.index(max_faces)
+        if mf < 0 or w == 0 or h == 0:
+            raise ValueError("Expected nonempty image and nonnegative max_faces")
+        if mf == 0:
+            return []
+        mf = min(mf, 32)
 
         if self._input_policy != "native" and self.backend != "ctypes":
             raise RuntimeError("Rectangle input requires the native FaceX shared library")
         if self._lib and self._handle:
             return self._detect_ctypes(image, w, h, mf, embeddings)
         elif self._cli_path:
-            if not embeddings or self._min_box_side != 16:
-                raise RuntimeError("This detection option requires the native shared library")
-            return self._detect_cli(image, w, h, mf)
+            return self._detect_cli(image, w, h, mf, embeddings)
         else:
             raise RuntimeError(
                 "No backend available. Install the shared library or set FACEX_CLI."
@@ -429,16 +444,19 @@ class FaceX:
             side = side or (800 if self._input_policy == "rectangle_bgr_800" else 640)
             canvas, rw, rh = prepare_rectangle(image, bgr=self._input_policy != "rectangle", side=side)
         ch, cw = canvas.shape[:2]
-        args = (self._handle, ptr, w, h, canvas.ctypes.data_as(pixels), cw, ch,
-                rw, rh, results, max_faces)
-        if hasattr(self._lib, "facex_detect_prepared_ex"):
-            n = self._lib.facex_detect_prepared_ex(*args, int(embeddings), threshold)
-        elif not embeddings or threshold >= 0:
-            raise RuntimeError("This option requires an updated native library")
-        elif self._input_policy == "native":
-            n = self._lib.facex_detect(self._handle, ptr, w, h, results, max_faces)
-        else:
-            n = self._lib.facex_detect_prepared(*args)
+        with self._native_lock:
+            if not self._handle:
+                raise RuntimeError("FaceX handle is closed")
+            args = (self._handle, ptr, w, h, canvas.ctypes.data_as(pixels), cw, ch,
+                    rw, rh, results, max_faces)
+            if hasattr(self._lib, "facex_detect_prepared_ex"):
+                n = self._lib.facex_detect_prepared_ex(*args, int(embeddings), threshold)
+            elif not embeddings or threshold >= 0:
+                raise RuntimeError("This option requires an updated native library")
+            elif self._input_policy == "native":
+                n = self._lib.facex_detect(self._handle, ptr, w, h, results, max_faces)
+            else:
+                n = self._lib.facex_detect_prepared(*args)
         if n < 0:
             raise RuntimeError(f"facex_detect returned error code {n}")
         return [_result_to_dict(results[i], embeddings) for i in range(n)]
@@ -484,72 +502,47 @@ class FaceX:
         h, w = image.shape[:2]
         scalar = ctypes.POINTER(ctypes.c_float)
         vec = np.empty(512, dtype=np.float32)
-        rc = self._lib.facex_embed_landmarks(
-            self._handle, image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), w, h,
-            points.ctypes.data_as(scalar), vec.ctypes.data_as(scalar))
+        with self._native_lock:
+            if not self._handle:
+                raise RuntimeError("FaceX handle is closed")
+            rc = self._lib.facex_embed_landmarks(
+                self._handle, image.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8)), w, h,
+                points.ctypes.data_as(scalar), vec.ctypes.data_as(scalar))
         if rc < 0:
             raise RuntimeError("Landmark embedding failed")
         return vec
 
-    def _detect_cli(self, image: np.ndarray, w: int, h: int, max_faces: int) -> List[dict]:
-        """Subprocess fallback: pipe image data to CLI and parse output."""
-        # Build command — the CLI protocol:
-        # stdin: 4 bytes width (le) + 4 bytes height (le) + w*h*3 bytes RGB uint8
-        # stdout: 4 bytes num_faces (le) + num_faces * FaceXResult as raw floats
-        args = [self._cli_path, "--detect", "--pipe"]
-        if self._embed_weights:
+    def _detect_cli(self, image, w, h, max_faces, embeddings):
+        if not self._detect_weights:
+            raise RuntimeError("Detection requires YuNet weights")
+        args = [self._cli_path, "--detect", "--pipe", "--detect-weights", self._detect_weights,
+                "--max-faces", str(max_faces), "--score-threshold", str(self._score_threshold),
+                "--nms-threshold", str(self._nms_threshold), "--min-box-side", str(self._min_box_side)]
+        if self._embed_weights and embeddings:
             args.extend(["--embed-weights", self._embed_weights])
-        if self._detect_weights:
-            args.extend(["--detect-weights", self._detect_weights])
-        args.extend(["--max-faces", str(max_faces)])
-        args.extend(["--score-threshold", str(self._score_threshold)])
+        if not embeddings:
+            args.append("--no-embeddings")
+        data = self._run_cli(args, struct.pack("<ii", w, h) + image.tobytes())
+        if len(data) < 4:
+            raise RuntimeError("Missing face count from facex-cli")
+        count = struct.unpack_from("<i", data)[0]
+        if not 0 <= count <= max_faces or len(data) != 4 + count * _RESULT_BYTES:
+            raise RuntimeError("Invalid face count or record length from facex-cli")
+        return [_result_to_dict(FaceXResult.from_buffer_copy(data, 4 + i * _RESULT_BYTES), embeddings)
+                for i in range(count)]
 
-        header = struct.pack("<ii", w, h)
-        input_data = header + image.tobytes()
-
+    def _run_cli(self, args, input_data):
+        env = None
+        if self._license_key is not None:
+            env = {**os.environ, "LICENSE_KEY": self._license_key}
         try:
-            proc = subprocess.run(
-                args,
-                input=input_data,
-                capture_output=True,
-                timeout=30,
-            )
-        except FileNotFoundError:
-            raise RuntimeError(f"CLI not found: {self._cli_path}")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("facex-cli timed out")
-
-        if proc.returncode != 0:
-            stderr = proc.stderr.decode(errors="replace").strip()
-            raise RuntimeError(f"facex-cli failed (rc={proc.returncode}): {stderr}")
-
-        out = proc.stdout
-        if len(out) < 4:
-            raise RuntimeError("facex-cli produced no output")
-
-        n = struct.unpack("<i", out[:4])[0]
-        expected = 4 + n * _RESULT_BYTES
-        if len(out) < expected:
-            raise RuntimeError(
-                f"Incomplete output: expected {expected} bytes, got {len(out)}"
-            )
-
-        faces = []
-        offset = 4
-        for i in range(n):
-            floats = struct.unpack_from(f"<{_RESULT_FLOATS}f", out, offset)
-            offset += _RESULT_BYTES
-            x1, y1, x2, y2, score = floats[:5]
-            kps_raw = floats[5:15]
-            emb = np.array(floats[15:], dtype=np.float32)
-            keypoints = [(kps_raw[j], kps_raw[j + 1]) for j in range(0, 10, 2)]
-            faces.append({
-                "bbox": (x1, y1, x2, y2),
-                "score": score,
-                "keypoints": keypoints,
-                "embedding": emb,
-            })
-        return faces
+            proc = subprocess.run(args, input=input_data, capture_output=True, timeout=30, env=env)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(f"Cannot run facex-cli: {error}") from error
+        if proc.returncode:
+            message = proc.stderr.decode(errors="replace").strip()
+            raise RuntimeError(f"facex-cli failed (rc={proc.returncode}): {message}")
+        return proc.stdout
 
     def embed(self, face_112x112: np.ndarray) -> np.ndarray:
         """
@@ -559,7 +552,7 @@ class FaceX:
             face_112x112: float32 numpy array shape (112, 112, 3), values in [-1, 1].
 
         Returns:
-            numpy float32 array of shape (512,), L2-normalized.
+            numpy float32 array of shape (512,) with raw EdgeFace components.
         """
         face = np.ascontiguousarray(face_112x112, dtype=np.float32)
         if face.shape != (112, 112, 3):
@@ -567,17 +560,21 @@ class FaceX:
 
         if self._lib and self._handle:
             return self._embed_ctypes(face)
-        else:
-            raise RuntimeError(
-                "embed() requires the shared library (ctypes backend). "
-                "Use detect() which includes embedding, or install libfacex."
-            )
+        if self._cli_path and self._embed_weights:
+            data = self._run_cli([self._cli_path, self._embed_weights, "--server"], face.tobytes())
+            if len(data) != EMBEDDING_DIM * 4:
+                raise RuntimeError("Invalid embedding length from facex-cli")
+            return np.frombuffer(data, dtype="<f4").copy()
+        raise RuntimeError("Embedding requires a native backend and EdgeFace weights")
 
     def _embed_ctypes(self, face: np.ndarray) -> np.ndarray:
         embedding = np.zeros(EMBEDDING_DIM, dtype=np.float32)
         ptr_in = face.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
         ptr_out = embedding.ctypes.data_as(ctypes.POINTER(ctypes.c_float))
-        rc = self._lib.facex_embed(self._handle, ptr_in, ptr_out)
+        with self._native_lock:
+            if not self._handle:
+                raise RuntimeError("FaceX handle is closed")
+            rc = self._lib.facex_embed(self._handle, ptr_in, ptr_out)
         if rc != 0:
             raise RuntimeError(f"facex_embed returned error code {rc}")
         return embedding
@@ -589,9 +586,11 @@ class FaceX:
 
     def close(self):
         """Release native resources."""
-        if self._lib and self._handle:
-            self._lib.facex_free(self._handle)
-            self._handle = None
+        with self._native_lock:
+            if self._lib and self._handle:
+                self._lib.facex_free(self._handle)
+                self._handle = None
+            self._cli_path = None
 
     def __del__(self):
         try:
