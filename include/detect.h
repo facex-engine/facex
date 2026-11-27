@@ -1,11 +1,11 @@
 /*
- * FaceX Detect — Tiny INT8 face detector.
+ * FaceX Detect — YuNet FP32 face detector.
  *
- * YuNet architecture (53K params), ~28 KB WASM engine, ~52 KB INT8 weights.
+ * YuNet architecture (53K params), 212,940-byte exported YNET weights.
  * Outputs bbox + 5 keypoints (ArcFace ordering) for downstream alignment.
  *
  * Usage:
- *   Detect* det = detect_init("det_500m_int8.bin");
+ *   Detect* det = detect_init("yunet_fp32.bin");
  *   DetectFace faces[10];
  *   int n = detect_run(det, rgb_160x160, 160, 160, faces, 10);
  *   detect_free(det);
@@ -44,7 +44,7 @@ typedef struct {
 
 /*
  * Initialize detector engine.
- *   weights_path: path to INT8 weight file (.bin).
+ *   weights_path: path to exported YuNet FP32 weight file (.bin).
  *   Returns: engine handle, or NULL on error.
  */
 Detect* detect_init(const char* weights_path);

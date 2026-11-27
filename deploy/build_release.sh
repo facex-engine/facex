@@ -36,11 +36,8 @@ echo "   libfacex.a: $(stat -c%s "$OUT/lib/libfacex.a") bytes"
 
 # 2. Build CLI binary
 echo "[2/4] Building facex-cli..."
-gcc -O3 -march=x86-64-v3 -mavx2 -mfma -funroll-loops -static \
-    -Iinclude -o "$OUT/bin/facex-cli" \
-    src/edgeface_engine.c src/transformer_ops.c src/gemm_int8_4x8c8.c \
-    src/threadpool.c src/weight_crypto.c \
-    -lm -lpthread
+make -B cli CFLAGS="-O3 -march=x86-64-v3 -funroll-loops" LDFLAGS="-static -lm -lpthread"
+cp facex-cli "$OUT/bin/facex-cli"
 echo "   facex-cli: $(stat -c%s "$OUT/bin/facex-cli") bytes"
 
 # 3. Build encrypt tool

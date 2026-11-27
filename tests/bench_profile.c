@@ -1,3 +1,4 @@
+#include "../src/edgeface_packed.h"
 /*
  * bench_profile.c — Profile FaceX embedding: GEMM vs other ops.
  * Measures total time and GEMM-only time.
@@ -56,8 +57,8 @@ int main(int argc, char** argv) {
 
     /* Measure individual operations by running benchmark code */
     /* Test: how fast is just the quantize + GEMM portion? */
-    extern void matmul_dynamic_int8(const float*, int, int, int,
-                                     const void*, const int32_t*, const float*, float*);
+    QuantScratch scratch = {malloc((size_t)M * ((K + 7) & ~7)), malloc((size_t)M * N * sizeof(int32_t))};
+    if (!scratch.input || !scratch.output) exit(1);
 
     /* Use the PackedMM info for a representative layer (stage 2: K=100, N=400) */
     printf("\n  Micro-benchmark: matmul sizes typical in EdgeFace:\n");
@@ -151,7 +152,7 @@ int main(int argc, char** argv) {
     double best_dyn=1e9;
     for (int i=0; i<1000; i++) {
         double t0 = now_ms();
-        matmul_dynamic_int8(A, M, K, N, pw, cs, w_sc, C);
+        matmul_dynamic_int8(A, M, K, N, pw, cs, w_sc, C, &scratch);
         double dt = now_ms() - t0;
         if (dt < best_dyn) best_dyn = dt;
     }
@@ -179,6 +180,7 @@ int main(int argc, char** argv) {
     printf("    INT8/FP32-packed ratio: %.2fx\n", best_fp_pk / best_i8);
     free(pb);
 
+    free(scratch.input); free(scratch.output);
     free(A); free(B); free(C); free(B_int8); free(w_sc); free(pw); free(cs);
     free(A_i8); free(C_i32);
     facex_free(fx);

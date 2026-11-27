@@ -42,19 +42,7 @@ extern void l2_normalize_fp32(float*, int, int, float);
 extern void depthwise_conv_nxn_hwc_fp32(const float*, int, int, int, const float*, const float*, int, float*);
 
 /* ============ Weight loader ============ */
-/* INT8 packed MatMul weight */
-typedef struct {
-    void* packed;
-    int32_t* col_sums;
-    float* w_scales;
-    int K, N;  /* original dimensions */
-} PackedMM;
-
-/* FP32 pre-packed MatMul weight (column-panel format for cache-friendly access) */
-typedef struct {
-    float* data;  /* packed [ceil(N/8), K, 8] — 32-byte aligned */
-    int K, N;
-} PackedFP32;
+#include "edgeface_packed.h"
 
 typedef struct {
     float** tensors;   /* array of float pointers */
@@ -62,7 +50,8 @@ typedef struct {
     uint8_t* raw;      /* raw file data */
     size_t raw_size;
     /* INT8 pre-packed MatMul weights */
-    PackedMM* mm;      /* array, indexed same as tensors */
+    QuantScratch scratch;
+    float *workspace;
     /* FP32 pre-packed MatMul weights */
     float* cached_position;
     PackedFP32* fp;    /* array, indexed same as tensors */
@@ -501,13 +490,6 @@ static void conv2d(const float* in, int Cin, int H, int W,
 }
 
 /* ============ MatMul with optional INT8 acceleration ============ */
-static void matmul_auto(const float* A, int M, int K, int N,
-                        const float* B_fp32, const PackedMM* mm)
-{
-    /* Allocate output — caller must know where to put result */
-    /* Actually this doesn't work — we need output pointer. Rethink. */
-}
-
 /* Use matmul that checks for pre-packed FP32 or INT8 weights */
 extern void matmul_fp32_packed(const float*, const float*, float*, int, int, int);
 
@@ -518,26 +500,16 @@ extern void matmul_fp32_packed_bias(const float*, const float*, const float*, fl
 extern void matmul_specialized(const float*, const float*, float*, int, int, int);
 extern void matmul_jit_or_packed(const float*, const float*, float*, int, int, int);
 
-static Weights* _g_weights = NULL; /* set in forward pass for INT8 lookup */
 
 /* Zero-overhead matmul: INT8 when available, FP32 fallback */
 static inline void matmul_wp(const float* A, float* C,
                              int M, int K, int N, const PackedFP32* fp)
 {
 #ifndef FACEX_FP32_ONLY
-    /* Use INT8 VNNI for large matmuls where VNNI throughput > quant overhead.
-     * For small K*N (<4096), FP32 packed is faster due to zero quant overhead. */
-    if (_g_weights && _g_weights->mm) {
-        int idx = (int)(fp - _g_weights->fp);
-        if (idx >= 0 && idx < _g_weights->n_tensors) {
-            PackedMM* mm = &_g_weights->mm[idx];
-            if (mm->packed && mm->w_scales && mm->N >= 8 && (int64_t)mm->K * mm->N >= 4096) {
-                extern void matmul_dynamic_int8(const float*, int, int, int,
-                    const void*, const int32_t*, const float*, float*);
-                matmul_dynamic_int8(A, M, mm->K, mm->N, mm->packed, mm->col_sums, mm->w_scales, C);
-                return;
-            }
-        }
+    if (fp->quant.packed) {
+        matmul_dynamic_int8(A, M, K, N, fp->quant.packed, fp->quant.col_sums,
+                            fp->quant.w_scales, C, fp->scratch);
+        return;
     }
 #endif
     matmul_fp32_packed(A, fp->data, C, M, fp->K, fp->N);
@@ -659,14 +631,8 @@ static void edgeface_forward(const float* input_chw, /* [3, 112, 112] */
                              Weights* weights,
                              float* embedding) /* [512] */
 {
-    _g_weights = weights; /* enable INT8 lookup in matmul_wp */
-    /* Static workspace — avoids malloc overhead on every call */
-    /* Stage zero has the largest ConvNeXt scratch: HW * (C + rank + hidden).
-     * The largest XCA attention layout at stage one needs 111960 floats. */
-    static float work[784 * (32 + 19 + 128)];
-    static float x_buf[784 * 32];
-
-    float* x = x_buf;
+    float *x = weights->workspace;
+    float *work = x + 784 * 32;
 
     /* === STEM: Conv 3→32 4×4 s4 → output directly in HWC === */
     {
@@ -914,27 +880,23 @@ static void edgeface_forward(const float* input_chw, /* [3, 112, 112] */
         }
     }
 
-    /* x and work are static — no free needed */
 }
 
 /* ============ Engine Init (used by both main and library API) ============ */
 static void release_weights(Weights* w) {
-    if (_g_weights == w) _g_weights = NULL;
-    for (int i = 0; i < w->n_tensors; i++) {
-        if (w->mm) {
-            free(w->mm[i].packed);
-            free(w->mm[i].w_scales);
-            free(w->mm[i].col_sums);
-        }
-        if (w->fp) {
+    for (int i = 0; w->fp && i < w->n_tensors; i++) {
+        free(w->fp[i].quant.packed);
+        free(w->fp[i].quant.w_scales);
+        free(w->fp[i].quant.col_sums);
 #ifdef _WIN32
-            _aligned_free(w->fp[i].data);
+        _aligned_free(w->fp[i].data);
 #else
-            free(w->fp[i].data);
+        free(w->fp[i].data);
 #endif
-        }
     }
-    free(w->mm);
+    free(w->scratch.input);
+    free(w->scratch.output);
+    free(w->workspace);
     free(w->fp);
     free(w->cached_position);
     free(w->tensors);
@@ -951,74 +913,52 @@ static int engine_init(const char* weights_path, Weights* weights, const char* l
     weights->fp = (PackedFP32*)calloc(weights->n_tensors, sizeof(PackedFP32));
     if (!weights->fp) goto fail;
 
+    weights->workspace = malloc((size_t)784 * (32 + 32 + 19 + 128) * sizeof(float));
+    if (!weights->workspace) goto fail;
+    static const struct { int index, k, n, rows; } projections[] = {
+        {8, 32, 19, 784}, {9, 19, 128, 784}, {14, 128, 19, 784}, {15, 19, 32, 784},
+        {22, 32, 19, 784}, {23, 19, 128, 784}, {25, 128, 19, 784}, {26, 19, 32, 784},
+        {33, 32, 19, 784}, {34, 19, 128, 784}, {36, 128, 19, 784}, {37, 19, 32, 784},
+        {48, 64, 38, 196}, {49, 38, 256, 196}, {51, 256, 38, 196}, {52, 38, 64, 196},
+        {59, 64, 38, 196}, {60, 38, 256, 196}, {62, 256, 38, 196}, {63, 38, 64, 196},
+        {74, 64, 38, 196}, {75, 38, 192, 196}, {87, 64, 38, 196}, {88, 38, 64, 196},
+        {94, 64, 38, 196}, {95, 38, 256, 196}, {97, 256, 38, 196}, {98, 38, 64, 196},
+        {109, 100, 60, 49}, {110, 60, 400, 49}, {112, 400, 60, 49}, {113, 60, 100, 49},
+        {120, 100, 60, 49}, {121, 60, 400, 49}, {123, 400, 60, 49}, {124, 60, 100, 49},
+        {131, 100, 60, 49}, {132, 60, 400, 49}, {134, 400, 60, 49}, {135, 60, 100, 49},
+        {142, 100, 60, 49}, {143, 60, 400, 49}, {145, 400, 60, 49}, {146, 60, 100, 49},
+        {153, 100, 60, 49}, {154, 60, 400, 49}, {156, 400, 60, 49}, {157, 60, 100, 49},
+        {164, 100, 60, 49}, {165, 60, 400, 49}, {167, 400, 60, 49}, {168, 60, 100, 49},
+        {175, 100, 60, 49}, {176, 60, 400, 49}, {178, 400, 60, 49}, {179, 60, 100, 49},
+        {186, 100, 60, 49}, {187, 60, 400, 49}, {189, 400, 60, 49}, {190, 60, 100, 49},
+        {200, 100, 60, 49}, {201, 60, 300, 49}, {207, 100, 60, 49}, {208, 60, 100, 49},
+        {214, 100, 60, 49}, {215, 60, 400, 49}, {217, 400, 60, 49}, {218, 60, 100, 49},
+        {229, 192, 115, 9}, {230, 115, 768, 9}, {232, 768, 115, 9}, {233, 115, 192, 9},
+        {240, 192, 115, 9}, {241, 115, 768, 9}, {243, 768, 115, 9}, {244, 115, 192, 9},
+        {256, 192, 115, 9}, {257, 115, 576, 9}, {263, 192, 115, 9}, {264, 115, 192, 9},
+        {270, 192, 115, 9}, {271, 115, 768, 9}, {273, 768, 115, 9}, {274, 115, 192, 9},
+    };
+    extern void pack_b_fp32(const float*, int, int, float*);
+    extern int packed_b_fp32_size(int, int);
 #ifndef FACEX_FP32_ONLY
-    weights->mm = (PackedMM*)calloc(weights->n_tensors, sizeof(PackedMM));
-    if (!weights->mm) goto fail;
-
-    /* Pre-pack MatMul weights to INT8 c8 format */
-    {
-        extern void pack_weights_4x8c8(const int8_t*, const float*, int, int, void*, int32_t*);
-        extern int packed_weights_size_4x8c8(int, int);
-
-        /* MatMul weight indices (2D tensors used in MatMul) */
-        int mm_idx[] = {8,9,14,15,22,23,25,26,33,34,36,37,48,49,51,52,59,60,62,63,
-                        74,75,87,88,94,95,97,98,109,110,112,113,120,121,123,124,
-                        131,132,134,135,142,143,145,146,153,154,156,157,164,165,
-                        167,168,175,176,178,179,186,187,189,190,200,201,207,208,
-                        214,215,217,218,229,230,232,233,240,241,243,244,256,257,
-                        263,264,270,271,273,274,283,284,-1};
-
-        /* Weight sizes from names.txt (K×N pairs) */
-        /* Each weight W[K,N] is used as: A[M,K] @ W[K,N] → C[M,N]
-         * c8 GEMM expects B as [N, K] (Cout=N, K=K)
-         * So we need to transpose W to [N, K] before packing */
-        int mm_shapes[][2] = {
-            {32,19},{19,128},{128,19},{19,32}, /* stage 0 block 0 */
-            {32,19},{19,128},{128,19},{19,32}, /* stage 0 block 1 */
-            {32,19},{19,128},{128,19},{19,32}, /* stage 0 block 2 */
-            {64,38},{38,256},{256,38},{38,64}, /* stage 1 block 0 */
-            {64,38},{38,256},{256,38},{38,64}, /* stage 1 block 1 */
-            {64,38},{38,192}, /* stage 1 attn QKV proj */
-            {64,38},{38,64},  /* stage 1 attn out proj */
-            {64,38},{38,256},{256,38},{38,64}, /* stage 1 attn MLP */
-            /* stage 2: 8 blocks × 4 weights */
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            /* stage 2 attn */
-            {100,60},{60,300},
-            {100,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            /* stage 3: 2 blocks */
-            {192,115},{115,768},{768,115},{115,192},
-            {192,115},{115,768},{768,115},{115,192},
-            /* stage 3 attn */
-            {192,115},{115,576},
-            {192,115},{115,192},
-            {192,115},{115,768},{768,115},{115,192},
-            /* head */
-            {115,192},{512,115},
-        };
-
-        int packed_count = 0;
-        for (int i = 0; mm_idx[i] >= 0; i++) {
-            int idx = mm_idx[i];
-            int K = mm_shapes[i][0], N = mm_shapes[i][1];
-
-            if (N < 8) continue; /* Skip tiny N (c8 GEMM needs N≥8) */
-
+    extern void pack_weights_4x8c8(const int8_t*, const float*, int, int, void*, int32_t*);
+    extern int packed_weights_size_4x8c8(int, int);
+    size_t input_size = 0, output_size = 0;
+#endif
+    for (size_t i = 0; i < sizeof(projections)/sizeof(*projections); i++) {
+        int idx = projections[i].index, K = projections[i].k, N = projections[i].n;
+        PackedFP32 *fp = &weights->fp[idx];
+        fp->K = K;
+        fp->N = N;
+#ifndef FACEX_FP32_ONLY
+        if (N >= 8 && K * N >= 4096) {
             float* w_fp32 = weights->tensors[idx]; /* [K, N] row-major */
 
             /* Quantize per-output-channel: transpose to [N, K], quantize per N */
             int8_t* w_int8 = (int8_t*)malloc((size_t)N * K);
             float* w_scales = (float*)malloc(N * sizeof(float));
 
-            weights->mm[idx].w_scales = w_scales;
+            fp->quant.w_scales = w_scales;
             if (!w_int8 || !w_scales) { free(w_int8); goto fail; }
             for (int n = 0; n < N; n++) {
                 float mx = 0;
@@ -1041,85 +981,34 @@ static int engine_init(const char* weights_path, Weights* weights, const char* l
             int32_t* col_sums = (int32_t*)calloc(((N+7)&~7), sizeof(int32_t));
 
 
-            weights->mm[idx].packed = packed;
-            weights->mm[idx].col_sums = col_sums;
+            fp->quant.packed = packed;
+            fp->quant.col_sums = col_sums;
             if (!packed || !col_sums) { free(w_int8); goto fail; }
             pack_weights_4x8c8(w_int8, NULL, K, N, packed, col_sums);
-            weights->mm[idx].K = K;
-            weights->mm[idx].N = N;
-            packed_count++;
-
             free(w_int8);
+            fp->scratch = &weights->scratch;
+            size_t rows = projections[i].rows;
+            size_t a = rows * ((K + 7) & ~7), y = rows * N;
+            if (a > input_size) input_size = a;
+            if (y > output_size) output_size = y;
+            continue;
         }
-    }
-
 #endif
-
-    /* Pre-pack FP32 MatMul weights into column-panel format [ceil(N/8), K, 8] */
-    {
-        extern void pack_b_fp32(const float*, int, int, float*);
-        extern int packed_b_fp32_size(int, int);
-        /* Same indices and shapes as INT8 packing */
-        int fp_idx[] = {8,9,14,15,22,23,25,26,33,34,36,37,48,49,51,52,59,60,62,63,
-                        74,75,87,88,94,95,97,98, /* stage 1 XCA */
-                        109,110,112,113,120,121,123,124,131,132,134,135,142,143,145,146,
-                        153,154,156,157,164,165,167,168,175,176,178,179,186,187,189,190,
-                        200,201,207,208,214,215,217,218, /* stage 2 XCA */
-                        229,230,232,233,240,241,243,244,
-                        256,257,263,264,270,271,273,274, /* stage 3 XCA */
-                        -1};
-        int fp_shapes[][2] = {
-            {32,19},{19,128},{128,19},{19,32},
-            {32,19},{19,128},{128,19},{19,32},
-            {32,19},{19,128},{128,19},{19,32},
-            {64,38},{38,256},{256,38},{38,64},
-            {64,38},{38,256},{256,38},{38,64},
-            {64,38},{38,192}, {64,38},{38,64}, {64,38},{38,256},{256,38},{38,64}, /* s1 XCA */
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,400},{400,60},{60,100},
-            {100,60},{60,300}, {100,60},{60,100}, {100,60},{60,400},{400,60},{60,100}, /* s2 XCA */
-            {192,115},{115,768},{768,115},{115,192},
-            {192,115},{115,768},{768,115},{115,192},
-            {192,115},{115,576}, {192,115},{115,192}, {192,115},{115,768},{768,115},{115,192}, /* s3 XCA */
-        };
-        for (int i = 0; fp_idx[i] >= 0; i++) {
-            int idx = fp_idx[i];
-            int K_ = fp_shapes[i][0], N_ = fp_shapes[i][1];
-            int sz = packed_b_fp32_size(K_, N_);
-            float* packed;
+        size_t bytes = (size_t)packed_b_fp32_size(K, N) * sizeof(float);
 #ifdef _WIN32
-            packed = (float*)_aligned_malloc((size_t)sz * sizeof(float), 64);
+        fp->data = _aligned_malloc(bytes, 64);
 #else
-            packed = (float*)aligned_alloc(32, (size_t)sz * sizeof(float));
+        fp->data = aligned_alloc(64, (bytes + 63) & ~(size_t)63);
 #endif
-            if (!packed) goto fail;
-            pack_b_fp32(weights->tensors[idx], K_, N_, packed);
-            weights->fp[idx].data = packed;
-            weights->fp[idx].K = K_;
-            weights->fp[idx].N = N_;
-        }
+        if (!fp->data) goto fail;
+        pack_b_fp32(weights->tensors[idx], K, N, fp->data);
     }
+#ifndef FACEX_FP32_ONLY
+    weights->scratch.input = malloc(input_size);
+    weights->scratch.output = malloc(output_size * sizeof(int32_t));
+    if (!weights->scratch.input || !weights->scratch.output) goto fail;
+#endif
 
-    /* Pre-transpose DW conv weights: [C, K*K] → [K*K, C] for HWC AVX2 loads */
-    /* DW weight tensor indices from names.txt */
-    int dw_indices[] = {4,18,29, 44,55, 66, 105,116,127,138,149,160,171,182, 193,195,
-                        225,236, 247,249,251, -1};
-    int dw_K[] = {3,3,3, 5,5, 3, 7,7,7,7,7,7,7,7, 3,3, 9,9, 3,3,3};
-    for (int di = 0; dw_indices[di] >= 0; di++) {
-        int idx = dw_indices[di];
-        int K = dw_K[di];
-        int KK = K * K;
-        /* Find C from weight shape: weight is [C, 1, K, K] = C*KK floats */
-        /* We need to know C — get from the next tensor (bias) which has C floats */
-        /* Actually just compute: total_floats / KK */
-        /* But we don't store sizes... just hardcode known C values */
-    }
     /* Simpler: transpose in-place in the weight buffer */
     /* DW weights are [C, K*K] stored contiguously. Transpose to [K*K, C] */
     {
@@ -1220,8 +1109,12 @@ fail:
 }
 
 /* ============ Main ============ */
-#ifndef FACEX_LIB
+#if !defined(FACEX_LIB) || defined(FACEX_BUILD_CLI)
 int main(int argc, char** argv) {
+#ifdef FACEX_BUILD_CLI
+    extern int facex_cli_detect(int, char **);
+    if (argc > 1 && !strcmp(argv[1], "--detect")) return facex_cli_detect(argc, argv);
+#endif
     const char* license_key = NULL;
     const char* weights_path = "data/edgeface_xs_fp32.bin";
     if (argc > 1) weights_path = argv[1];
@@ -1275,8 +1168,13 @@ int main(int argc, char** argv) {
          * --batch:  reads CHW float32 directly (Python test protocol) */
         while (1) {
             float* read_buf = is_server ? hwc_buf : input;
-            if (fread(read_buf, sizeof(float), 3*112*112, stdin) != 3*112*112)
-                break;
+            size_t bytes = fread(read_buf, 1, sizeof(input), stdin);
+            if (bytes == 0 && feof(stdin)) break;
+            if (bytes != sizeof(input)) {
+                fputs("Incomplete embedding request\n", stderr);
+                release_weights(&weights);
+                return 1;
+            }
             if (is_server) {
                 /* HWC → CHW conversion */
                 for (int h = 0; h < 112; h++)
@@ -1285,8 +1183,10 @@ int main(int argc, char** argv) {
                             input[c * 112 * 112 + h * 112 + w] = hwc_buf[(h * 112 + w) * 3 + c];
             }
             edgeface_forward(input, &weights, embedding);
-            fwrite(embedding, sizeof(float), 512, stdout);
-            fflush(stdout);
+            if (fwrite(embedding, sizeof(float), 512, stdout) != 512 || fflush(stdout) != 0) {
+                release_weights(&weights);
+                return 1;
+            }
         }
     } else {
         /* Single image: warmup + benchmark */

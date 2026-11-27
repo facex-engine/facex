@@ -18,8 +18,8 @@ pip install -e ".[image]"
 import numpy as np
 from facex import FaceX
 
-# Initialize (auto-finds library and weights)
-fx = FaceX()
+# After building the library and preparing both weights from the repository root
+fx = FaceX(embed_weights="data/edgeface_xs_fp32.bin", detect_weights="weights/yunet_fp32.bin")
 
 # Load an image as RGB uint8 numpy array (H, W, 3)
 from PIL import Image
@@ -44,7 +44,7 @@ For camera frames and photos, initialize the native SDK with the rectangle polic
 Install the image extra for Pillow and build the shared library from this version.
 
 ```python
-fx = FaceX(embed_weights="weights/edgeface_xs_fp32.bin",
+fx = FaceX(embed_weights="data/edgeface_xs_fp32.bin",
            detect_weights="weights/yunet_fp32.bin",
            input_policy="rectangle_bgr")
 faces = fx.detect(image)
@@ -80,10 +80,11 @@ curl -F file=@photo.jpg http://localhost:8080/detect
 
 ## Configuration
 
+Build the shared library with `make libfacex.so` on Linux or choose the CLI explicitly with `FaceX(cli_path="./facex-cli", ...)`. The rectangle and guided detection paths use the shared library. See the [build and weights instructions](../README.md#build-the-native-runtime).
+
 ### Auto-detection
 
-FaceX looks for the native library and weights relative to the package location
-(expects `../../weights/` and `../../libfacex.so` or `../../facex.dll`).
+The SDK searches for the shared library near the package and under `FACEX_ROOT`. It recognizes the downloaded EdgeFace weights in `data/` and detector weights in `weights/`.
 
 ### Environment variables
 
@@ -115,7 +116,7 @@ fx = FaceX(
 Main class. Uses ctypes (shared library) if available, falls back to subprocess (CLI).
 
 - **`detect(image, max_faces=None)`** -- Detect faces in an RGB uint8 image. Returns list of dicts with `bbox`, `score`, `keypoints`, `embedding`.
-- **`embed(face_112x112)`** -- Compute embedding for a pre-aligned 112x112 face (ctypes only). Input: float32 HWC in [-1, 1]. Returns 512-dim float32 array.
+- **`embed(face_112x112)`** -- Compute embedding for a pre-aligned 112x112 face (ctypes only). Input: float32 HWC in [-1, 1]. Returns 512 raw float32 values. Use cosine similarity to score two outputs.
 - **`similarity(emb1, emb2)`** -- Static method. Cosine similarity between two 512-dim embeddings. Returns float in [-1, 1].
 - **`close()`** -- Free native resources. Also works as context manager (`with FaceX() as fx: ...`).
 - **`backend`** -- Property: `"ctypes"`, `"cli"`, or `"none"`.
@@ -134,7 +135,7 @@ sim = similarity(emb1, emb2)
 | Backend | Requires | Detection | Embedding (standalone) |
 |---|---|---|---|
 | ctypes | `libfacex.so` / `facex.dll` | Yes | Yes |
-| cli | `facex-cli` binary | Yes | No (use detect) |
+| cli | `facex-cli` binary | Yes | Yes (use detect) |
 | none | nothing | No | No |
 
 Similarity always works (pure numpy).

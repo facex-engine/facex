@@ -6,7 +6,12 @@ on:
       - 'Makefile'
       - 'src/**'
       - 'include/**'
-      - 'tests/golden/**'
+      - 'tests/**'
+      - 'nn2/**'
+      - 'docker/**'
+      - 'python/**'
+      - 'wasm/**'
+      - 'download_weights.sh'
       - 'tests/bench_gallery_codes.py'
       - 'tests/bench_gallery_groups.py'
       - 'tests/check_gallery_profiles.py'
@@ -50,7 +55,7 @@ jobs:
           FACEX_GALLERY_SCALE: '1'
           FACEX_GALLERY_FIXTURE: ${{ runner.temp }}/gallery
         run: |
-          make cli cli-fp32
+          make -j2 all check cli-fp32 libfacex.so
           mv facex-cli-fp32 "$RUNNER_TEMP/facex-native-fp32"
           make cli-fp32 CFLAGS="-O3 -march=x86-64 -funroll-loops"
           cc --version | head -1

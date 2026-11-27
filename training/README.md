@@ -1,8 +1,6 @@
 # FaceX training
 
-Train 4 size variants (Nano / Tiny / Standard / XS) of the FaceX
-embedding model from scratch on MS1M-RefineV2, export to the parametric
-`.bin` v2 format.
+Train four MobileFaceNet recognition variants and export EFM3 weights. The training scripts describe MS1M-RefineV2 as their input. For the published Nano ONNX, see the [artifact contract](../MFN_README.md#public-nano-release) and [provenance notes](../README.md#licensing-and-provenance).
 
 ## Files
 

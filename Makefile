@@ -1,11 +1,10 @@
-# FaceX — Fast face embedding library
-# 3ms inference, 7MB binary, zero dependencies
+# FaceX native detection and recognition
 #
 # Build:  make
 # Test:   make example && ./facex-example
 
 CC ?= gcc
-CFLAGS = -O3 -march=native -mfma -funroll-loops
+CFLAGS ?= -O3 -march=native -funroll-loops
 LDFLAGS = -lm -lpthread
 
 ifeq ($(OS),Windows_NT)
@@ -34,17 +33,21 @@ libfacex.a: $(LIBOBJ)
 # Standalone CLI (for Go subprocess / testing)
 cli: facex-cli$(EXT)
 
-CLI_SRC = src/edgeface_engine.c src/transformer_ops.c src/threadpool.c src/weight_crypto.c
+CLI_COMMON = src/facex.c src/cli_detect.c src/detect.c src/align.c src/transformer_ops.c src/weight_crypto.c
+CLI_HEADERS = src/edgeface_engine.c src/edgeface_packed.h src/threadpool.h include/facex.h include/detect.h
+CLI_SRC = $(CLI_COMMON) src/threadpool.c src/gemm_int8_4x8c8.c
+FP32_SRC = $(CLI_COMMON) src/threadpool_stub.c
 
-facex-cli$(EXT): $(CLI_SRC) src/gemm_int8_4x8c8.c
-	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
-	@echo "Built facex-cli$(EXT)"
+facex-cli$(EXT): $(CLI_SRC) $(CLI_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFACEX_BUILD_CLI -Iinclude -o $@ $(CLI_SRC) $(LDFLAGS)
 
-# FP32 reference for comparing embeddings across CPU profiles.
 cli-fp32: facex-cli-fp32$(EXT)
 
-facex-cli-fp32$(EXT): $(CLI_SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -DFACEX_FP32_ONLY -Iinclude -o $@ $^ $(LDFLAGS)
+facex-cli-fp32$(EXT): $(FP32_SRC) $(CLI_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFACEX_BUILD_CLI -DFACEX_FP32_ONLY -Iinclude -o $@ $(FP32_SRC) $(LDFLAGS)
+
+libfacex.so: $(addprefix src/,$(LIBOBJ:.o=.c)) $(CLI_HEADERS)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -fPIC -Iinclude -o $@ $(addprefix src/,$(LIBOBJ:.o=.c)) $(LDFLAGS)
 
 # Example program
 example: facex-example$(EXT)
@@ -88,8 +91,8 @@ golden-test$(EXT): tests/golden_test.c libfacex.a
 # Parametric v2 engine (loads EFX2 .bin, supports nano/tiny/standard/xs)
 v2-cli: facex-v2$(EXT)
 
-facex-v2$(EXT): src/edgeface_engine_v2.c src/edgeface_engine.c src/transformer_ops.c src/gemm_int8_4x8c8.c src/threadpool.c
-	$(CC) $(CFLAGS) -DV2_STANDALONE -DFACEX_LIB -Iinclude -o $@ $^ $(LDFLAGS)
+facex-v2$(EXT): src/edgeface_packed.h src/edgeface_engine_v2.c src/edgeface_engine.c src/transformer_ops.c src/gemm_int8_4x8c8.c src/threadpool.c
+	$(CC) $(CFLAGS) -DV2_STANDALONE -DFACEX_LIB -Iinclude -o $@ $(filter %.c,$^) $(LDFLAGS)
 	@echo "Built facex-v2$(EXT)"
 
 # MobileFaceNet engine (loads EFM3 .bin, supports nano/tiny/standard/xs)
@@ -106,12 +109,11 @@ example_mfn$(EXT): examples/example_mfn.c src/facex_mfn.c
 	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
 	@echo "Built example_mfn$(EXT)"
 
-# Detector static library (Sprint 1+: scaffold only, real engine arrives in
-# later sprints — see docs/plan/detector_plan.md).
+# Standalone YuNet detector library.
 detect-lib: libdetect.a
 
 libdetect.a: detect.o
 	$(AR) rcs $@ $^
 
 clean:
-	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-cli-fp32$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT) *.o $(LIBOBJ:.o=.d)
+	rm -f libfacex.so libfacex.a libdetect.a facex-cli$(EXT) facex-cli-fp32$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT) *.o $(LIBOBJ:.o=.d)

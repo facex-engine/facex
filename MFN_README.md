@@ -1,10 +1,20 @@
-# FaceX MobileFaceNet — 4 size variants, Apache 2.0
+# FaceX MobileFaceNet
 
-Self-trained Apache-licensed face recognition weights for the FaceX
-runtime. Four size points to fit different hardware budgets, all
-sharing the same parametric C engine.
+Four recognition architectures share a parametric C engine. The C engine takes EFM3 weights. The public Nano download is an ONNX graph.
 
-## Weights
+## Public Nano release
+
+| Field | Verified value |
+|---|---|
+| Asset | [facex_nano.onnx](https://github.com/facex-engine/facex/releases/download/facex-nano-1.0/facex_nano.onnx), 802,377 bytes |
+| Tag and tagged commit | `facex-nano-1.0`, `88465996e4cdd2e26d2169f5434bfa608a447b42` |
+| SHA-256 | `bd0094143bb4c7d04a76dcdad4e332f5985847b921ec4d6678c3fd89aaea3889` |
+| Input | `input`, float32 `[1,3,112,112]`, aligned RGB, scaled to `[-1,1]` |
+| Output | `embedding`, float32 `[1,256]`, L2 normalized in the graph |
+
+The release notes describe a 512-component output. Inspection and execution of the asset above give 256 components. The training recipe names MS1M-RefineV2. The released metadata does not link this artifact to a specific dataset snapshot and redistribution permission record. [Release](https://github.com/facex-engine/facex/releases/tag/facex-nano-1.0) · [Provenance notes](README.md#licensing-and-provenance)
+
+## Local EFM3 exports
 
 | file | params | INT8 size | FP32 size | MS1M train acc |
 |------|-------:|----------:|----------:|---------------:|
@@ -13,9 +23,7 @@ sharing the same parametric C engine.
 | `weights/facex_standard.bin` | 968K | ~1 MB | 3.95 MB | 38.2% |
 | `weights/facex_xs.bin` | 2.08M | ~2 MB | 8.42 MB | 50.9% |
 
-All trained from scratch on MS1M-RefineV2 (5.82M images, 85,742 IDs)
-with ArcFace (s=64, m=0.5), AdamW lr=1e-3 cosine, fp32. No upstream
-pretrained weights — fully Apache-licensed.
+These are project training-run figures and estimated storage sizes for the variants. The C loader reads FP32 EFM3 exports.
 
 ## Architecture
 
@@ -89,7 +97,7 @@ mfn_engine_forward(&engine, input_chw, emb);
 // input_chw: [3 * 112 * 112] fp32, values in [-1, 1], CHW layout
 
 float sim = mfn_similarity(emb_a, emb_b, D);
-// > 0.3 typically = same person
+// Calibrate the threshold on representative labeled pairs.
 
 mfn_engine_free(&engine);
 ```
@@ -97,8 +105,7 @@ mfn_engine_free(&engine);
 ### Image preprocessing
 
 Same as InsightFace: 112×112 RGB, aligned (5-point), `(pixel - 127.5) / 128`,
-CHW layout. You need an external detector (e.g. YuNet bundled in
-`weights/yunet_*.onnx`) to align faces before feeding them in.
+CHW layout. Use a detector such as [YuNet](README.md#build-the-native-runtime) to align faces before feeding them in.
 
 ## Verifying a new checkpoint
 
@@ -113,7 +120,7 @@ Runs the .bin file through a numpy reference implementation of the
 same op-graph as the C engine and compares to the PyTorch model. Max
 expected error ~1e-5 (round-trip from fp32 file).
 
-All four shipped models passed verification on commit:
+Previously recorded maximum errors for the four training exports:
 
 ```
 nano:     max_err = 1.28e-05
