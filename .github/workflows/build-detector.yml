@@ -1,40 +1,75 @@
-name: Build the browser detector
-on: [push]
+name: Compare native inference before and after review
+on:
+  push:
+    branches: [verify/sdk-detector-build]
 permissions:
   contents: read
 jobs:
-  build:
+  compare:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
-      - name: Compile the distributed YuNet detector
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq emscripten > /dev/null
-          emcc --version | head -1
-          emcc -O3 -msimd128 -Iinclude src/detect.c -o "$RUNNER_TEMP/detect.js" -sMODULARIZE=1 -sEXPORT_NAME=DetectModule -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS='["_detect_init","_detect_run","_detect_free","_detect_version","_malloc","_free"]' -sEXPORTED_RUNTIME_METHODS='["FS","cwrap"]' -sENVIRONMENT=web,worker,node
-          bash download_weights.sh
-          python - <<'PY'
-          import struct
-          buf = open('data/edgeface_xs_fp32.bin', 'rb').read()
-          sizes, pos = [], 8
-          while pos < len(buf):
-              n = struct.unpack_from('<I', buf, pos)[0]
-              sizes.append(n // 4)
-              pos += 4 + n
-          print("TENSOR_FLOAT_COUNTS=" + ",".join(map(str, sizes)))
-          PY
-          cd "$RUNNER_TEMP"
-          sha256sum detect.js detect.wasm
-          for file in detect.js detect.wasm; do
-            echo "BEGIN $file"
-            base64 -w 96 "$file"
-            echo "END $file"
-          done
-      - uses: actions/upload-artifact@v4
         with:
-          name: browser-detector
-          path: |
-            ${{ runner.temp }}/detect.js
-            ${{ runner.temp }}/detect.wasm
+          ref: 5f10ce0b4ec2d92e1cc96400b64e21eb9202ebb7
+          path: baseline
+      - uses: actions/checkout@v4
+        with:
+          ref: 79aa9093f3a5dae66f288804702d24dcd4c51571
+          path: revised
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build both revisions using identical flags
+        run: |
+          python -m pip install numpy==2.3.5 Pillow==12.0.0
+          for dir in baseline revised; do
+            make -C "$dir" -j2 cli cli-fp32 CFLAGS="-O3 -march=native -funroll-loops"
+            (cd "$dir" && cc -O3 -march=native -funroll-loops -shared -fPIC -Iinclude src/facex.c src/transformer_ops.c src/gemm_int8_4x8c8.c src/threadpool.c src/detect.c src/align.c src/weight_crypto.c -lm -lpthread -o libfacex.so)
+          done
+          (cd revised && bash download_weights.sh)
+      - name: Compare every component on 135 crops in both modes
+        env:
+          PYTHONPATH: revised/tests:revised/python
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          from bench_gallery_groups import fixture_patches, embed_patches
+          patches = fixture_patches()
+          weights = Path("revised/data/edgeface_xs_fp32.bin").resolve()
+          for name in ("facex-cli", "facex-cli-fp32"):
+              old, new = [embed_patches(weights, patches, Path(d, name).resolve()) for d in ("baseline", "revised")]
+              assert new.shape == old.shape == (15, 9, 512)
+              assert old.tobytes() == new.tobytes(), name
+              print(f"{name}: 135 byte-identical embeddings, SHA256 {hashlib.sha256(new.tobytes()).hexdigest()}")
+          PY
+      - name: Measure anonymous RSS with eight live engines
+        run: |
+          for dir in baseline revised baseline revised baseline revised; do
+            python - "$dir" <<'PY'
+          import ctypes as c
+          from pathlib import Path
+          import sys
+          def rss_kib():
+              return int(next(l for l in Path("/proc/self/status").read_text().splitlines() if l.startswith("RssAnon:")).split()[1])
+          lib = c.CDLL(str(Path(sys.argv[1], "libfacex.so").resolve()))
+          lib.facex_init.argtypes, lib.facex_init.restype = [c.c_char_p] * 3, c.c_void_p
+          ptr = c.POINTER(c.c_float)
+          lib.facex_embed.argtypes, lib.facex_embed.restype = [c.c_void_p, ptr, ptr], c.c_int
+          lib.facex_free.argtypes, lib.facex_free.restype = [c.c_void_p], None
+          weights = bytes(Path("revised/data/edgeface_xs_fp32.bin").resolve())
+          source = (c.c_float * (112 * 112 * 3))(*[((i % 253) - 126) / 127.5 for i in range(112 * 112 * 3)])
+          output = (c.c_float * 512)()
+          start = rss_kib()
+          handles = []
+          for i in range(8):
+              handle = lib.facex_init(weights, None, None)
+              assert handle and lib.facex_embed(handle, source, output) == 0
+              handles.append(handle)
+          print(f"{sys.argv[1]}: eight warmed handles, RSS delta {rss_kib() - start} KiB")
+          for handle in handles:
+              lib.facex_free(handle)
+          PY
+          done
