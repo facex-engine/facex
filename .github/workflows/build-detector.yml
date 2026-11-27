@@ -1,0 +1,29 @@
+name: Build the browser detector
+on: [push]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the distributed YuNet detector
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq emscripten > /dev/null
+          emcc --version | head -1
+          emcc -O3 -msimd128 -Iinclude src/detect.c -o "$RUNNER_TEMP/detect.js" -sMODULARIZE=1 -sEXPORT_NAME=DetectModule -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS='["_detect_init","_detect_run","_detect_free","_detect_version","_malloc","_free"]' -sEXPORTED_RUNTIME_METHODS='["FS","cwrap"]' -sENVIRONMENT=web,worker,node
+          cd "$RUNNER_TEMP"
+          sha256sum detect.js detect.wasm
+          for file in detect.js detect.wasm; do
+            echo "BEGIN $file"
+            base64 -w 96 "$file"
+            echo "END $file"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-detector
+          path: |
+            ${{ runner.temp }}/detect.js
+            ${{ runner.temp }}/detect.wasm
