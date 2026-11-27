@@ -7,7 +7,7 @@ pkg=microsoft.ml.onnxruntime
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 curl -fsSL --retry 2 "https://api.nuget.org/v3-flatcontainer/$pkg/$version/$pkg.$version.nupkg" -o "$work/sdk.nupkg"
-sha256sum "$work/sdk.nupkg"
+echo '359b4782cfa2e288e6c4bbb9da1c231b085fb8e0d149faf8c3c843f54576559b  sdk.nupkg' | (cd "$work" && sha256sum --check)
 unzip -q "$work/sdk.nupkg" 'build/native/include/*' 'runtimes/linux-x64/native/*' -d "$work"
 mkdir -p "$dest/include" "$dest/lib"
 cp -R "$work/build/native/include/." "$dest/include/"

@@ -52,16 +52,7 @@ python scripts/train_all.py
 python scripts/train.py --arch nano --epochs 25 --batch 512
 ```
 
-Realistic wall time on RTX 5060 Ti (16 GB):
-
-| arch     | params | epochs | est. time |
-|----------|-------:|-------:|----------:|
-| nano     |   203K |     25 |   ~4h     |
-| tiny     |   514K |     25 |   ~6h     |
-| standard |  1.07M |     22 |   ~10h    |
-| xs       |  1.78M |     20 |   ~16h    |
-
-Total ~36h. Train_all auto-resumes if interrupted.
+The sequential trainer can resume interrupted runs from saved checkpoints. Report measured throughput with the dataset size, batch size, precision and GPU model. See the [run notes](RESUME.md) for the original environment.
 
 ## Export
 

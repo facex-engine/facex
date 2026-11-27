@@ -27,7 +27,7 @@ make -j2 all libfacex.so
 make test
 ```
 
-The download script verifies the EdgeFace checkpoint before installing or reusing it. The default build targets the local CPU. For the portable FP32 reference executable, run `make cli-fp32 CFLAGS="-O3"`. Enroll and score with the same model, preprocessing and runtime mode. Native mixed precision and FP32 can produce different scores.
+The download script verifies the EdgeFace checkpoint before installing or reusing it. The default build targets the local CPU. For the portable FP32 reference executable, run `make cli-fp32 CFLAGS="-O3"`. CI builds this executable on Apple Silicon and compares concurrent Go worker replies with serial inference using the released EdgeFace weights. Enroll and score with the same model, preprocessing and runtime mode. Native mixed precision and FP32 can produce different scores.
 
 To enable detection, export the March 2023 OpenCV Zoo YuNet model from this pinned revision:
 

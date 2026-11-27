@@ -50,7 +50,7 @@ Embedding dim: 256 for nano, 512 for the rest.
 
 ## .bin format (EFM3)
 
-Self-describing: a binary header (~80 bytes) names the stage shapes
+A fixed 80-byte binary header describes the stage shapes
 and a JSON copy follows it for debugging. The engine reads only the
 binary header.
 
@@ -131,13 +131,4 @@ xs:       max_err = 3.04e-06
 
 ## Training from scratch
 
-See `training/README.md` and `training/RESUME.md` for the dataset prep
-+ training pipeline. Realistic per-arch wall-time on a single RTX 5060
-Ti (16 GB), fp32 training, ArcFace + MS1M:
-
-| arch | epochs | per epoch | total |
-|------|-------:|----------:|------:|
-| nano | 40 | ~37 min | ~25 h |
-| tiny | 35 | ~50 min | ~29 h |
-| standard | 30 | ~80 min | ~40 h |
-| xs | 30 | ~130 min | ~64 h |
+The [training guide](training/README.md) covers dataset preparation, training and EFM3 export. The [run notes](training/RESUME.md) describe the original training environment. Record the architecture, number of images, batch size, precision and accelerator when reporting training throughput.
