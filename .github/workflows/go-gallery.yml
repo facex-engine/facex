@@ -62,7 +62,7 @@ jobs:
           np.vstack((near_and_boundary, random)).astype("<f4").tofile(output / "queries")
           PY
           cd go/facex
-          go test -v -run '^Test(IdentityGalleryScale|LiveGalleryScale)$' -count=1 ./...
+          go test -v -run '^Test(IdentityGalleryScale|LiveGalleryScale|MathModelFixture|MathWorkloads)$' -count=1 ./...
       - name: Verify concurrent engine replies against serial inference
         working-directory: go/facex
         env:
