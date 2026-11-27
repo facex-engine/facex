@@ -2,11 +2,13 @@ package facex
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -474,6 +476,10 @@ func TestDecisionModelReplay(t *testing.T) {
 		axes[i] = f.Template
 	}
 	var visits []ReviewVisit
+	var roster, oldPolicy, newPolicy strings.Builder
+	roster.WriteString("visit_id,expected_id\n")
+	oldPolicy.WriteString("visit_id,decision\n")
+	newPolicy.WriteString("visit_id,decision\n")
 	fixed, withheld, remaining := 0, 0, 0
 	for truth := 0; truth < 15; truth++ {
 		q := make([]float32, OutputSize)
@@ -494,6 +500,17 @@ func TestDecisionModelReplay(t *testing.T) {
 			}
 		}
 		gap := best - next
+		expected := fmt.Sprint(truth)
+		if truth >= len(axes) {
+			expected = "unknown"
+		}
+		fmt.Fprintf(&roster, "%d,%s\n", truth, expected)
+		fmt.Fprintf(&oldPolicy, "%d,%d\n", truth, id)
+		candidate := fmt.Sprint(id)
+		if gap <= .1 {
+			candidate = "review"
+		}
+		fmt.Fprintf(&newPolicy, "%d,%s\n", truth, candidate)
 		wrong := id != truth
 		visits = append(visits, ReviewVisit{-gap, wrong})
 		if gap <= .1 {
@@ -510,6 +527,11 @@ func TestDecisionModelReplay(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	comparison, err := CompareVisitLogs(strings.NewReader(roster.String()), strings.NewReader(oldPolicy.String()), strings.NewReader(newPolicy.String()))
+	if err != nil || comparison.WrongRemoved != fixed || comparison.CorrectIDToReview != withheld || comparison.After.WrongKnownID+comparison.After.UnknownGranted != remaining {
+		t.Fatal(comparison, err)
+	}
+	t.Logf("paired report visits=%d known=%d unknown=%d wrong_removed=%d introduced=%d correct_to_review=%d remaining=%d", comparison.Visits, comparison.Known, comparison.Unknown, comparison.WrongRemoved, comparison.WrongIntroduced, comparison.CorrectIDToReview, remaining)
 	before := a.Curve[0].RemainingWrong
 	if before != fixed+remaining {
 		t.Fatal("replay mismatch")
