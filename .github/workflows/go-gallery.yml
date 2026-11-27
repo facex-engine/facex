@@ -1,0 +1,30 @@
+name: Go gallery checks
+on:
+  push:
+    paths:
+      - 'go/facex/**'
+      - '.github/workflows/go-gallery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gallery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: go/facex
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Check concurrent access and decision boundaries
+        run: go test -race -count=1 ./...
+      - name: Compare 65535 rows against exhaustive search
+        env:
+          FACEX_GALLERY_SCALE: '1'
+        run: go test -v -run '^TestIdentityGalleryScale$' -count=1 ./...

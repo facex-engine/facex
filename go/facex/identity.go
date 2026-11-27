@@ -1,6 +1,7 @@
 package facex
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -28,6 +29,7 @@ type identityGroup struct {
 type identityCap struct {
 	row                  int
 	cosRadius, sinRadius float64
+	members []int
 }
 
 func vectorNorm(row []float32) (float64, error) {
@@ -87,6 +89,7 @@ func (p *identityGroup) buildCaps() {
 	for i, label := range owner {
 		c := &p.caps[label]
 		c.cosRadius = min(c.cosRadius, nearest[i])
+		c.members = append(c.members, i)
 	}
 	for i := range p.caps {
 		c := &p.caps[i]
@@ -139,41 +142,42 @@ func NewIdentityGallery(embeddings [][]float32, ids []int64) (*IdentityGallery, 
 	return g, nil
 }
 
-func (p *identityGroup) bounds(query []float32, norm float64) (float64, float64) {
-	low, high := -2., -2.
-	for _, c := range p.caps {
-		dot := p.cosine(c.row, query, norm)
-		low = max(low, dot-cosinePad)
-		d := min(1., dot+cosinePad)
-		upper := 1.
-		if d < c.cosRadius {
-			upper = d*c.cosRadius + math.Sqrt((1-d)*(1+d))*c.sinRadius
-		}
-		high = max(high, upper+cosinePad)
+func (p *identityGroup) capBounds(c *identityCap, query []float32, norm float64) (float64, float64) {
+	dot := p.cosine(c.row, query, norm)
+	d := min(1., dot+cosinePad)
+	upper := 1.
+	if d < c.cosRadius {
+		upper = d*c.cosRadius + math.Sqrt((1-d)*(1+d))*c.sinRadius
 	}
-	return low, high
+	return dot-cosinePad, upper+cosinePad
 }
 
-func (g *IdentityGallery) check(query []float32, score, margin float64) (float64, error) {
+func (g *IdentityGallery) validate(score, margin float64) error {
 	if g == nil || len(g.people) == 0 {
-		return 0, errors.New("facex: empty identity gallery")
+		return errors.New("facex: empty identity gallery")
 	}
 	if !(score >= -1 && score <= 1 && margin >= 0 && margin <= 2) {
-		return 0, errors.New("facex: invalid cosine or margin threshold")
+		return errors.New("facex: invalid cosine or margin threshold")
 	}
-	return vectorNorm(query)
+	return nil
 }
 
-func (g *IdentityGallery) screen(query []float32, norm, score, margin float64) (int64, bool) {
+func (g *IdentityGallery) screen(ctx context.Context, query []float32, norm, score, margin float64) (int64, bool, float64) {
 	if norm == 0 || (len(g.people) == 1 && margin > 0) {
-		return rejectedID, true
+		return rejectedID, true, 0
 	}
-	// Track the two largest upper bounds to exclude the winning identity
-	// from its own margin comparison without allocating per-query buffers.
 	bestLower, first, second := math.Inf(-1), math.Inf(-1), math.Inf(-1)
 	winner, upperWinner := 0, 0
 	for i := range g.people {
-		lo, hi := g.people[i].bounds(query, norm)
+		if i%64 == 0 && ctx.Err() != nil {
+			return rejectedID, false, 0
+		}
+		p := &g.people[i]
+		lo, hi := math.Inf(-1), math.Inf(-1)
+		for j := range p.caps {
+			lower, upper := p.capBounds(&p.caps[j], query, norm)
+			lo, hi = max(lo, lower), max(hi, upper)
+		}
 		if lo > bestLower {
 			bestLower, winner = lo, i
 		}
@@ -184,47 +188,74 @@ func (g *IdentityGallery) screen(query []float32, norm, score, margin float64) (
 		}
 	}
 	if first < score {
-		return rejectedID, true
+		return rejectedID, true, bestLower
 	}
 	rival := first
 	if winner == upperWinner {
 		rival = second
 	}
 	if bestLower >= score && bestLower > rival && bestLower-rival >= margin {
-		return g.people[winner].id, true
+		return g.people[winner].id, true, bestLower
 	}
-	return rejectedID, false
+	return rejectedID, false, bestLower
 }
 
 // Screen uses enrolled witnesses to bound the decision. A resolved ID of -1
 // means rejection. With resolved=false, Identify can complete the exact lookup.
 func (g *IdentityGallery) Screen(query []float32, minScore, minMargin float64) (id int64, resolved bool, err error) {
-	norm, err := g.check(query, minScore, minMargin)
+	if err = g.validate(minScore, minMargin); err != nil {
+		return rejectedID, false, err
+	}
+	norm, err := vectorNorm(query)
 	if err != nil {
 		return rejectedID, false, err
 	}
-	id, resolved = g.screen(query, norm, minScore, minMargin)
+	id, resolved, _ = g.screen(context.Background(), query, norm, minScore, minMargin)
 	return id, resolved, nil
 }
 
-// Identify returns the best person's ID or -1. A person's score is the maximum
-// float64 cosine over their views. Both thresholds are inclusive, but equal
-// best scores across people always reject. One person requires a zero margin.
+// Identify returns the best person's ID or -1. Both thresholds are inclusive.
+// A tied best score across different people always rejects.
 func (g *IdentityGallery) Identify(query []float32, minScore, minMargin float64) (int64, error) {
-	norm, err := g.check(query, minScore, minMargin)
+	if err := g.validate(minScore, minMargin); err != nil {
+		return rejectedID, err
+	}
+	norm, err := vectorNorm(query)
 	if err != nil {
 		return rejectedID, err
 	}
-	if id, resolved := g.screen(query, norm, minScore, minMargin); resolved {
-		return id, nil
+	return g.identify(context.Background(), query, norm, minScore, minMargin), nil
+}
+
+func (g *IdentityGallery) identify(ctx context.Context, query []float32, norm, minScore, minMargin float64) int64 {
+	id, resolved, lower := g.screen(ctx, query, norm, minScore, minMargin)
+	if resolved {
+		return id
 	}
 	best, second := math.Inf(-1), math.Inf(-1)
 	winner := rejectedID
 	for i := range g.people {
+		if ctx.Err() != nil {
+			return rejectedID
+		}
 		p := &g.people[i]
 		value := math.Inf(-1)
-		for j := range p.norms {
-			value = max(value, p.cosine(j, query, norm))
+		// Every acceptable winner reaches minScore and at least the best
+		// witness score. A cap below this floor minus the required margin
+		// cannot change any accepted decision, even as a runner-up.
+		floor := max(minScore, max(best, lower)) - minMargin - cosinePad
+		for j := range p.caps {
+			c := &p.caps[j]
+			_, upper := p.capBounds(c, query, norm)
+			if upper < floor || upper < value {
+				continue
+			}
+			for n, row := range c.members {
+				if n%256 == 0 && ctx.Err() != nil {
+					return rejectedID
+				}
+				value = max(value, p.cosine(row, query, norm))
+			}
 		}
 		if value > best {
 			best, second, winner = value, best, p.id
@@ -233,7 +264,7 @@ func (g *IdentityGallery) Identify(query []float32, minScore, minMargin float64)
 		}
 	}
 	if best >= minScore && best > second && best-second >= minMargin {
-		return winner, nil
+		return winner
 	}
-	return rejectedID, nil
+	return rejectedID
 }
