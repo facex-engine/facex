@@ -21,22 +21,31 @@ function openCacheDB() {
 
 async function getCached(key) {
   const db = await openCacheDB();
-  try { return await new Promise((resolve) => {
-    const tx = db.transaction(CACHE_STORE, 'readonly');
-    const req = tx.objectStore(CACHE_STORE).get(key);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => resolve(null);
-  }); } finally { db.close(); }
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHE_STORE, 'readonly');
+      const req = tx.objectStore(CACHE_STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
 }
 
 async function putCached(key, data) {
   const db = await openCacheDB();
-  return new Promise((resolve) => {
-    const tx = db.transaction(CACHE_STORE, 'readwrite');
-    tx.objectStore(CACHE_STORE).put(data, key);
-    tx.oncomplete = () => resolve();
-    tx.onabort = tx.onerror = () => resolve();
-  }); } finally { db.close(); }
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHE_STORE, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onabort = tx.onerror = () => reject(tx.error);
+      tx.objectStore(CACHE_STORE).put(data, key);
+    });
+  } finally {
+    db.close();
+  }
 }
 
 /**

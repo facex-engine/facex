@@ -1,4 +1,4 @@
-# Build the FRVT 1:1 .so on the exact OS NIST uses (Ubuntu 20.04 x86_64).
+# Build the FRVT 1:1 adapter with Ubuntu 20.04 and the pinned runtime SDK.
 # Run:
 #   docker build -t facex-frvt-build .
 #   docker run --rm -v ${PWD}/build:/work/build facex-frvt-build
@@ -22,11 +22,9 @@ RUN wget -q https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VE
 WORKDIR /work
 COPY . /work
 
-CMD bash -c '\
-  rm -rf build && mkdir build && cd build && \
-  cmake -DONNXRUNTIME_ROOT=/opt/onnxruntime -DCMAKE_BUILD_TYPE=Release .. && \
-  cmake --build . --parallel && \
-  echo && echo "=== built: $(ls -la libfrvt_11_facex_001.so) ===" && \
-  mkdir -p lib && cp libfrvt_11_facex_001.so lib/ && \
-  cp /opt/onnxruntime/lib/libonnxruntime.so.* lib/ \
+CMD bash -ec '\
+  cmake -S /work -B /tmp/facex-build -DONNXRUNTIME_ROOT=/opt/onnxruntime -DCMAKE_BUILD_TYPE=Release && \
+  cmake --build /tmp/facex-build --parallel && \
+  cmake --install /tmp/facex-build --prefix /work/build && \
+  cp -a /opt/onnxruntime/lib/libonnxruntime.so.* /work/build/lib/ \
 '

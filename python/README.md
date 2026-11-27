@@ -115,8 +115,8 @@ fx = FaceX(
 
 Main class. Uses ctypes (shared library) if available, falls back to subprocess (CLI).
 
-- **`detect(image, max_faces=None)`** -- Detect faces in an RGB uint8 image. Returns list of dicts with `bbox`, `score`, `keypoints`, `embedding`.
-- **`embed(face_112x112)`** -- Compute embedding for a pre-aligned 112x112 face (ctypes only). Input: float32 HWC in [-1, 1]. Returns 512 raw float32 values. Use cosine similarity to score two outputs.
+- **`detect(image, max_faces=None, *, embeddings=True)`** returns a list of dictionaries with `bbox`, `score` and `keypoints` for an RGB uint8 image. With `embeddings=True` each result also includes its vector.
+- **`embed(face_112x112)`** -- Compute embedding for a pre-aligned 112x112 face using either native backend. Input: float32 HWC in [-1, 1]. Returns 512 raw float32 values. Use cosine similarity to score two outputs.
 - **`similarity(emb1, emb2)`** -- Static method. Cosine similarity between two 512-dim embeddings. Returns float in [-1, 1].
 - **`close()`** -- Free native resources. Also works as context manager (`with FaceX() as fx: ...`).
 - **`backend`** -- Property: `"ctypes"`, `"cli"`, or `"none"`.
@@ -135,7 +135,7 @@ sim = similarity(emb1, emb2)
 | Backend | Requires | Detection | Embedding (standalone) |
 |---|---|---|---|
 | ctypes | `libfacex.so` / `facex.dll` | Yes | Yes |
-| cli | `facex-cli` binary | Yes | Yes (use detect) |
+| cli | `facex-cli` from this revision | Yes, native image dimensions | Yes |
 | none | nothing | No | No |
 
 Similarity always works (pure numpy).

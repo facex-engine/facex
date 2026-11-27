@@ -2,6 +2,7 @@
 #define FACEX_FRVT_ALIGNMENT_HPP
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 namespace facex_frvt {
@@ -61,10 +62,10 @@ static void warp_affine_bilinear(
             int x0 = static_cast<int>(fx), y0 = static_cast<int>(fy);
             int x1 = std::min(x0 + 1, sw - 1), y1 = std::min(y0 + 1, sh - 1);
             float wx = fx - x0, wy = fy - y0;
-            const uint8_t* p00 = src + (y0 * sw + x0) * channels;
-            const uint8_t* p01 = src + (y0 * sw + x1) * channels;
-            const uint8_t* p10 = src + (y1 * sw + x0) * channels;
-            const uint8_t* p11 = src + (y1 * sw + x1) * channels;
+            const uint8_t* p00 = src + (static_cast<std::size_t>(y0) * sw + x0) * channels;
+            const uint8_t* p01 = src + (static_cast<std::size_t>(y0) * sw + x1) * channels;
+            const uint8_t* p10 = src + (static_cast<std::size_t>(y1) * sw + x0) * channels;
+            const uint8_t* p11 = src + (static_cast<std::size_t>(y1) * sw + x1) * channels;
             for (int c = 0; c < 3; c++) {
                 int sc = (channels == 3) ? c : 0;
                 float v = (1 - wx) * (1 - wy) * p00[sc]

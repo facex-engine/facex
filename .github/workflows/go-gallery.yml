@@ -1,4 +1,4 @@
-name: Go gallery checks
+name: FaceX runtime checks
 on:
   push:
     paths:
@@ -142,3 +142,19 @@ jobs:
           bash download_weights.sh
           cd go/facex
           FACEX_POOL_TEST_EXE="$GITHUB_WORKSPACE/facex-cli-fp32" FACEX_POOL_TEST_WEIGHTS="$GITHUB_WORKSPACE/data/edgeface_xs_fp32.bin" go test -race -v -timeout=90s -run '^TestPoolRealEngine$' -count=1 ./...
+  frvt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the XS adapter and check its public template interface
+        run: |
+          sdk="$RUNNER_TEMP/onnxruntime-linux-x64-1.21.0"
+          curl -fsSL --retry 2 https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-1.21.0.tgz -o "$RUNNER_TEMP/ort.tgz"
+          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          cmake -S frvt -B "$RUNNER_TEMP/frvt-build" -DONNXRUNTIME_ROOT="$sdk" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/frvt-build" --parallel 2
+          cmake --install "$RUNNER_TEMP/frvt-build" --prefix "$RUNNER_TEMP/frvt"
+          lib="$RUNNER_TEMP/frvt/lib"
+          c++ -std=c++14 -Ifrvt/include tests/frvt_templates.cpp -L"$lib" -lfrvt_11_facex_001 -Wl,-rpath,"$lib" -Wl,-rpath-link,"$sdk/lib" -o "$RUNNER_TEMP/frvt-templates"
+          LD_LIBRARY_PATH="$sdk/lib" "$RUNNER_TEMP/frvt-templates"

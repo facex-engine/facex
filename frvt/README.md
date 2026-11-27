@@ -1,135 +1,42 @@
 # FaceX adapter for FRTE 1:1 verification
 
-Build and packaging instructions for the FaceX adapter to the NIST [FRTE 1:1 Verification](https://pages.nist.gov/frvt/html/frvt11.html).
+This directory implements the NIST FRVT 1:1 interface for Linux x86-64. The adapter uses ONNX Runtime with three model files from the application configuration directory.
 
-## Architecture
+| File | Purpose |
+|---|---|
+| `facex_detect.onnx` | Face detection on a 320 × 320 input |
+| `facex_landmark.onnx` | 98 landmarks used to derive five alignment points |
+| `facex_xs.onnx` | 512-component XS embedding of an aligned 112 × 112 RGB face |
 
-```
-NIST testbench
-   │ provides Image objects (uint8 24bpp RGB or 8bpp greyscale)
-   ▼
-src/facex_frvt.cpp        ← Interface implementation
-   │
-   ▼
-facex_detect.onnx   →  face detection (FCOS, 320×320, 100K params)
-facex_landmark.onnx →  98-point WFLW landmarks (112×112, 1.15M params)
-facex_xs.onnx       →  512-dim L2-normalized embedding (112×112, 2.07M params)
-```
+The adapter selects the largest detection in each image and averages embeddings for up to five images of one person. Each 2,053-byte template contains the four-byte `FXT1` header, one validity byte and 512 float32 components. Valid unit embeddings are compared with cosine similarity rescaled to [0, 1000]. The public 256-component Nano model has a different output shape. [Implementation](src/facex_frvt.cpp) · [Nano contract](../MFN_README.md#public-nano-release)
 
-**Template format:** 2053 bytes per face = 4-byte magic `FXT1` +
-1-byte valid flag + 512 × float32 L2-normalized embedding.
+## Build on Linux
 
-**Match:** cosine similarity rescaled to [0, 1000] (NIST treats higher
-as more similar).
+Set `ORT` to an extracted Linux x86-64 ONNX Runtime SDK with `include/` and `lib/`. From the repository root:
 
-## Build (Docker, recommended)
-
-The container reproduces NIST's evaluation environment exactly
-(Ubuntu 20.04, x86-64, AVX2, GCC 9):
-
-```bash
-cd frvt
-docker build -t facex-frvt-build .
-docker run --rm -v ${PWD}/build:/work/build facex-frvt-build
-ls build/lib/libfrvt_11_facex_001.so
+```sh
+cmake -S frvt -B frvt/build -DONNXRUNTIME_ROOT="$ORT" -DCMAKE_BUILD_TYPE=Release
+cmake --build frvt/build --parallel
+cmake --install frvt/build --prefix "$PWD/frvt/bundle"
 ```
 
-## Build (WSL Ubuntu)
+The install target produces `frvt/bundle/lib/libfrvt_11_facex_001.so`. To build with the Ubuntu 20.04 container and its pinned ONNX Runtime SDK, use the following commands from the repository root:
 
-```bash
-sudo apt install build-essential cmake
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-1.21.0.tgz
-tar xzf onnxruntime-linux-x64-1.21.0.tgz
-export ORT=$PWD/onnxruntime-linux-x64-1.21.0
-
-cd frvt
-cmake -S . -B build -DONNXRUNTIME_ROOT=$ORT -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
+```sh
+docker build -t facex-frvt-build frvt
+mkdir -p frvt/bundle
+docker run --rm -v "$PWD/frvt/bundle:/work/build" facex-frvt-build
 ```
 
-## Prepare the submission package
+## Prepare and validate a bundle
 
-NIST expects this exact layout:
+Place the shared adapter and the matching ONNX Runtime libraries in `lib/`, the three ONNX files in `config/`, and the release notes in `doc/`. Record the model hashes, runtime version and adapter commit so the package can be reproduced.
 
-```
-facex_001/
-├── doc/
-│   └── ReleaseNotes.txt
-├── config/
-│   ├── facex_detect.onnx
-│   ├── facex_landmark.onnx
-│   └── facex_xs.onnx
-└── lib/
-    ├── libfrvt_11_facex_001.so
-    └── libonnxruntime.so.1.21.0
+The alignment regression covers translation, rotation, border pixels and degenerate landmarks. Run it from the repository root:
+
+```sh
+c++ -O2 -std=c++11 tests/frvt_alignment.cpp -o /tmp/frvt-alignment
+/tmp/frvt-alignment
 ```
 
-Set `MODEL_DIR` to the directory containing the three required ONNX models, then build the package:
-
-```bash
-mkdir -p facex_001/doc facex_001/config facex_001/lib
-cp "$MODEL_DIR"/facex_{detect,landmark,xs}.onnx facex_001/config/
-cp build/lib/libfrvt_11_facex_001.so       facex_001/lib/
-cp build/lib/libonnxruntime.so.*           facex_001/lib/
-cat > facex_001/doc/ReleaseNotes.txt <<EOF
-FaceX 1:1 submission — sequence 001
-Built: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
-Models: facex_detect (own, WIDER FACE), facex_landmark (own, WFLW),
-        facex_xs (own MobileFaceNet 1.35x width, ArcFace head, MS1M)
-ONNX Runtime: 1.21.0
-EOF
-
-tar czf facex_001.tar.gz facex_001/
-```
-
-## Validate locally before submission
-
-NIST provides a validation suite at
-[github.com/usnistgov/frvt](https://github.com/usnistgov/frvt) under
-`11/validation/`. Run it against `libfrvt_11_facex_001.so` to catch
-crashes, signature mismatches, and slow runtime:
-
-```bash
-git clone https://github.com/usnistgov/frvt
-cd frvt/11/validation
-./run_validate_11.sh ../../facex_001
-```
-
-It will run a few thousand template-creation and match operations
-and print a pass/fail report. Fix any failures before uploading.
-
-## PGP-sign and submit
-
-NIST requires a PGP-signed tarball uploaded to their SFTP endpoint.
-Steps once your participation agreement is approved:
-
-```bash
-gpg --gen-key                                  # one-time
-gpg --armor --export your@email.com > pubkey.asc   # send to NIST
-gpg --output facex_001.tar.gz.sig --detach-sign facex_001.tar.gz
-
-sftp frvt@sftp.nist.gov   # credentials from NIST after agreement
-put facex_001.tar.gz
-put facex_001.tar.gz.sig
-```
-
-## What you (the human) need to do separately
-
-1. **Sign the Participation Agreement.**
-   Download from https://pages.nist.gov/frvt/html/frvt11.html → "FRTE/FATE Participation Agreement".
-   Fill in name / org / contact, sign (electronic OK), email to
-   `frvt@nist.gov`.
-
-2. **Generate and send PGP key.**
-   `gpg --gen-key` once, then email `pubkey.asc` to `frvt@nist.gov`.
-   They will reply with SFTP credentials.
-
-3. **Wait ~3-6 months** for results to appear on
-   https://pages.nist.gov/frvt/html/frvt11.html under "FaceX 001".
-
-4. **Resubmissions** allowed every 4 months. Increment the sequence
-   number (`002`, `003`, ...) and rebuild.
-
-## Evaluation status
-
-This adapter expects the XS model with 512 output components. The downloadable Nano artifact has 256 outputs and requires a different template contract. The repository contains preparation and local validation instructions. A ranking, FNMR at a specified FMR, or a claim of NIST testing requires a published result identifying the submission. Historical LFW figures are listed in the [model guide](../README.md#models-and-measurements).
+Use the NIST validation harness for the complete package and consult the program for its current submission procedure. An official evaluation result identifies its submission, test population and operating point. The project's historical LFW figures are reported separately. [NIST harness](https://github.com/usnistgov/frvt) · [FRTE 1:1](https://pages.nist.gov/frvt/html/frvt11.html) · [FaceX measurements](../README.md#models-and-measurements)

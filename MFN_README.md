@@ -9,7 +9,7 @@ Four recognition architectures share a parametric C engine. The C engine takes E
 | Asset | [facex_nano.onnx](https://github.com/facex-engine/facex/releases/download/facex-nano-1.0/facex_nano.onnx), 802,377 bytes |
 | Tag and tagged commit | `facex-nano-1.0`, `88465996e4cdd2e26d2169f5434bfa608a447b42` |
 | SHA-256 | `bd0094143bb4c7d04a76dcdad4e332f5985847b921ec4d6678c3fd89aaea3889` |
-| Input | `input`, float32 `[1,3,112,112]`, aligned RGB, scaled to `[-1,1]` |
+| Input | `input`, float32 `[1,3,112,112]`, aligned RGB, each uint8 channel converted with `(pixel - 127.5) / 128.0` |
 | Output | `embedding`, float32 `[1,256]`, L2 normalized in the graph |
 
 The release notes describe a 512-component output. Inspection and execution of the asset above give 256 components. The training recipe names MS1M-RefineV2. The released metadata does not link this artifact to a specific dataset snapshot and redistribution permission record. [Release](https://github.com/facex-engine/facex/releases/tag/facex-nano-1.0) · [Provenance notes](README.md#licensing-and-provenance)

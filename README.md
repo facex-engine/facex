@@ -70,6 +70,8 @@ In C, call `facex_init(embed_path, detector_path, NULL)` for plain weights. An e
 
 In Go, supply the CLI and weights paths in `facex.Config`. `NewEmbedPool(config, workers, maxWaiting)` runs one persistent engine per worker. Size the worker count against the CPU and memory available to the application. [Go binding](go/facex/facex.go) · [Concurrent requests](go/facex/pool.go)
 
+On a Linux CI runner, eight live native EdgeFace handles, each warmed with one embedding, increased anonymous RSS by a median of **76.6 MiB**, down from **117.9 MiB** at commit `5f10ce0` (three runs per revision). All 135 fixture-crop embeddings matched the previous revision byte for byte within each of the two build modes. These measurements cover model memory and numerical compatibility. [Comparison run](https://github.com/facex-engine/facex/actions/runs/46050152862)
+
 ### Binary CLI protocol
 
 | Command | Each input | Each output |
@@ -82,7 +84,7 @@ The embedding commands process complete frames until EOF. Each little-endian req
 
 ## Models and measurements
 
-The released **facex_nano.onnx** has input **input [1,3,112,112]** and output **embedding [1,256]**. Use five-point ArcFace alignment, RGB float32 and values in `[-1,1]`. The graph applies L2 normalization. The original release notes list 512 dimensions. The hash above identifies the 256-dimensional artifact. [Tagged source](https://github.com/facex-engine/facex/tree/88465996e4cdd2e26d2169f5434bfa608a447b42) · [MobileFaceNet guide](MFN_README.md)
+The released **facex_nano.onnx** has input **input [1,3,112,112]** and output **embedding [1,256]**. Use five-point ArcFace alignment and planar RGB float32. The training and evaluation scripts convert each 8-bit channel with `(pixel - 127.5) / 128.0`. The graph applies L2 normalization. The original release notes list 512 dimensions. The hash above identifies the 256-dimensional artifact. [Tagged source](https://github.com/facex-engine/facex/tree/88465996e4cdd2e26d2169f5434bfa608a447b42) · [MobileFaceNet guide](MFN_README.md)
 
 Historical project measurements on LFW used 10 folds. The threshold was selected on nine folds before evaluation on the held-out fold. For deployment, measure false accepts and false rejects on representative labeled pairs. [Evaluation script](training/scripts/lfw_eval.py)
 
