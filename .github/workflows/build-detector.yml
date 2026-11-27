@@ -14,6 +14,17 @@ jobs:
           sudo apt-get install -y -qq emscripten > /dev/null
           emcc --version | head -1
           emcc -O3 -msimd128 -Iinclude src/detect.c -o "$RUNNER_TEMP/detect.js" -sMODULARIZE=1 -sEXPORT_NAME=DetectModule -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS='["_detect_init","_detect_run","_detect_free","_detect_version","_malloc","_free"]' -sEXPORTED_RUNTIME_METHODS='["FS","cwrap"]' -sENVIRONMENT=web,worker,node
+          bash download_weights.sh
+          python - <<'PY'
+          import struct
+          buf = open('data/edgeface_xs_fp32.bin', 'rb').read()
+          sizes, pos = [], 8
+          while pos < len(buf):
+              n = struct.unpack_from('<I', buf, pos)[0]
+              sizes.append(n // 4)
+              pos += 4 + n
+          print("TENSOR_FLOAT_COUNTS=" + ",".join(map(str, sizes)))
+          PY
           cd "$RUNNER_TEMP"
           sha256sum detect.js detect.wasm
           for file in detect.js detect.wasm; do

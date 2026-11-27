@@ -1,33 +1,35 @@
-#!/bin/bash
-# Download FaceX model weights from GitHub Release
-set -e
+#!/usr/bin/env bash
+# Fetch and verify the EdgeFace XS release used by the native API.
+set -eu
+destination="data/edgeface_xs_fp32.bin"
+source_url="https://github.com/facex-engine/facex/releases/download/v1.0.0/edgeface_xs_fp32.bin"
+expected="d23f7b3cf8bcda5e451b48cf012e7dc6c4963d5703fafb8893f956d0203691d8"
 
-WEIGHTS_DIR="data"
-WEIGHTS_FILE="$WEIGHTS_DIR/edgeface_xs_fp32.bin"
-RELEASE_URL="https://github.com/facex-engine/facex/releases/download/v1.0.0/edgeface_xs_fp32.bin"
-EXPECTED_SIZE=7133584
+verify() {
+    if command -v sha256sum >/dev/null; then
+        actual=$(sha256sum < "$1") || return 1
+    else
+        actual=$(shasum -a 256 < "$1") || return 1
+    fi
+    [ "${actual%% *}" = "$expected" ]
+}
 
-if [ -f "$WEIGHTS_FILE" ]; then
-    echo "Weights already exist: $WEIGHTS_FILE"
+if [ -f "$destination" ] && verify "$destination"; then
+    echo "Verified $destination"
     exit 0
 fi
-
-mkdir -p "$WEIGHTS_DIR"
-
-echo "Downloading EdgeFace-XS weights (7 MB)..."
-if command -v curl &> /dev/null; then
-    curl -L -o "$WEIGHTS_FILE" "$RELEASE_URL"
-elif command -v wget &> /dev/null; then
-    wget -O "$WEIGHTS_FILE" "$RELEASE_URL"
+mkdir -p data
+temporary=$(mktemp "$destination.XXXXXX")
+trap 'rm -f "$temporary"' EXIT
+trap 'exit 1' HUP INT TERM
+if command -v curl >/dev/null; then
+    curl --fail --location --retry 2 --output "$temporary" "$source_url"
 else
-    echo "Error: curl or wget required"
+    wget -O "$temporary" "$source_url"
+fi
+if ! verify "$temporary"; then
+    echo "EdgeFace XS checksum verification failed" >&2
     exit 1
 fi
-
-# Verify size
-ACTUAL_SIZE=$(stat -c%s "$WEIGHTS_FILE" 2>/dev/null || stat -f%z "$WEIGHTS_FILE" 2>/dev/null)
-if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ]; then
-    echo "Warning: expected $EXPECTED_SIZE bytes, got $ACTUAL_SIZE"
-else
-    echo "OK: $WEIGHTS_FILE ($ACTUAL_SIZE bytes)"
-fi
+mv -f "$temporary" "$destination"
+echo "Verified $destination"

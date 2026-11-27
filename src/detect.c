@@ -65,14 +65,26 @@ Detect* detect_init(const char* weights_path) {
         fprintf(stderr, "detect: bad magic\n"); free(det->raw); free(det); return NULL;
     }
     uint32_t n = *(uint32_t*)(det->raw + 4);
-    if (n > DETECT_MAX_TENSORS) { free(det->raw); free(det); return NULL; }
+    /* Number of FP32 values used from each tensor in the March 2023 YuNet export. */
+    static const uint32_t required[] = {
+        432, 16, 144, 16, 144, 16, 288, 32, 288, 32, 576, 64, 576, 64,
+        576, 64, 576, 64, 576, 64, 576, 64, 576, 64, 576, 64, 576, 64,
+        576, 64, 4, 4, 16, 256, 16, 256, 32, 512, 32, 1024, 64, 2048,
+        64, 4096, 64, 4096, 64, 4096, 64, 4096, 64, 4096, 64, 4096, 4, 256,
+        4, 36, 4, 256, 4, 36, 4, 256, 4, 36, 1, 64, 1, 9,
+        1, 64, 1, 9, 1, 64, 1, 9, 10, 640, 10, 90, 10, 640,
+        10, 90, 10, 640, 10, 90, 1, 64, 1, 9, 1, 64, 1, 9,
+        1, 64, 1, 9, 64, 4096, 64, 4096, 64, 4096, 0, 3, 3, 3,
+    };
+    if (n < sizeof(required)/sizeof(*required) || n > DETECT_MAX_TENSORS) { free(det->raw); free(det); return NULL; }
     det->n_tensors = (int)n;
 
     size_t off = 8;
     for (int i = 0; i < det->n_tensors; i++) {
-        if (off + 4 > det->raw_len) { free(det->raw); free(det); return NULL; }
+        if (det->raw_len - off < 4) { free(det->raw); free(det); return NULL; }
         uint32_t sz = *(uint32_t*)(det->raw + off); off += 4;
-        if (off + sz > det->raw_len) { free(det->raw); free(det); return NULL; }
+        if (sz > det->raw_len - off || sz % sizeof(float) ||
+            ((size_t)i < sizeof(required)/sizeof(*required) && sz / sizeof(float) < required[i])) { free(det->raw); free(det); return NULL; }
         det->tensors[i] = (float*)(det->raw + off); off += sz;
     }
 
