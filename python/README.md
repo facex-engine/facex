@@ -222,3 +222,26 @@ can require rescoring the entire gallery. Both implementations now use the same
 row-wise summation order for final scores and break equal scores by enrollment
 order. At a floating-point decision boundary a score can differ in the last
 bits from older releases.
+
+### Identify a person across multiple enrollment photos
+
+Use IdentityGallery when a person has multiple reference photos. Supply the
+same nonnegative integer ID for all rows belonging to that person. The score
+for each person is the maximum cosine across their views. The margin is the
+difference between the two best people. A tied best score or a zero query
+returns -1. A single registered person requires a zero margin to match.
+
+```python
+from facex import IdentityGallery
+
+gallery = IdentityGallery(enrollment_embeddings, person_ids)
+ids = gallery.identify(query_embeddings, min_score=0.85, min_margin=0.05)
+```
+
+The thresholds above are examples. Calibrate them with separate queries
+representative of the deployment. The gallery keeps the original float32
+enrollment snapshot for exact fallback and stores up to eight representative
+views per person for screening. Rebuild after enrollment changes.
+To inspect how often screening suffices, call
+`ids, resolved = gallery.screen(query_embeddings, min_score=0.85, min_margin=0.05)`.
+A false mask entry requires exact lookup even though its placeholder ID is -1.
