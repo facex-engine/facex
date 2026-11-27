@@ -14,7 +14,7 @@ ifeq ($(OS),Windows_NT)
 endif
 
 
-.PHONY: all clean example lib cli encrypt test detect-lib v2-cli
+.PHONY: all clean example lib cli cli-fp32 encrypt test detect-lib v2-cli
 
 all: lib cli detect-lib v2-cli
 
@@ -34,9 +34,17 @@ libfacex.a: $(LIBOBJ)
 # Standalone CLI (for Go subprocess / testing)
 cli: facex-cli$(EXT)
 
-facex-cli$(EXT): src/edgeface_engine.c src/transformer_ops.c src/gemm_int8_4x8c8.c src/threadpool.c src/weight_crypto.c
+CLI_SRC = src/edgeface_engine.c src/transformer_ops.c src/threadpool.c src/weight_crypto.c
+
+facex-cli$(EXT): $(CLI_SRC) src/gemm_int8_4x8c8.c
 	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
 	@echo "Built facex-cli$(EXT)"
+
+# FP32 reference for comparing embeddings across CPU profiles.
+cli-fp32: facex-cli-fp32$(EXT)
+
+facex-cli-fp32$(EXT): $(CLI_SRC)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DFACEX_FP32_ONLY -Iinclude -o $@ $^ $(LDFLAGS)
 
 # Example program
 example: facex-example$(EXT)
@@ -106,4 +114,4 @@ libdetect.a: detect.o
 	$(AR) rcs $@ $^
 
 clean:
-	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT) *.o $(LIBOBJ:.o=.d)
+	rm -f libfacex.a libdetect.a facex-cli$(EXT) facex-cli-fp32$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT) *.o $(LIBOBJ:.o=.d)

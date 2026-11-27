@@ -116,8 +116,6 @@ static int load_weights(const char* path, Weights* w, const char* license_key) {
 #define W(idx) (weights->tensors[idx])
 
 /* Forward declarations */
-static void matmul_w(const float* A, const float* B, float* C,
-                     int M, int K, int N, const PackedMM* mm);
 static void matmul_wp(const float* A, float* C,
                       int M, int K, int N, const PackedFP32* fp);
 static void matmul_wpb(const float* A, float* C, const float* bias,
@@ -513,20 +511,6 @@ static void matmul_auto(const float* A, int M, int K, int N,
 /* Use matmul that checks for pre-packed FP32 or INT8 weights */
 extern void matmul_fp32_packed(const float*, const float*, float*, int, int, int);
 
-extern void matmul_dynamic_int8(const float*, int, int, int,
-                                const void*, const int32_t*, const float*, float*);
-
-static void matmul_w(const float* A, const float* B, float* C,
-                     int M, int K, int N, const PackedMM* mm)
-{
-    /* Use INT8 when pre-packed weights available (2× faster) */
-    if (mm && mm->packed && mm->w_scales && N >= 8) {
-        matmul_dynamic_int8(A, M, K, N, mm->packed, mm->col_sums, mm->w_scales, C);
-        return;
-    }
-    matmul_fp32(A, B, C, M, K, N);
-}
-
 /* Packed FP32 matmul — uses pre-packed weights for cache-friendly access.
  * Optional bias: added to each output row during store (avoids separate pass). */
 extern void matmul_fp32_packed_bias(const float*, const float*, const float*, float*, int, int, int);
@@ -540,6 +524,7 @@ static Weights* _g_weights = NULL; /* set in forward pass for INT8 lookup */
 static inline void matmul_wp(const float* A, float* C,
                              int M, int K, int N, const PackedFP32* fp)
 {
+#ifndef FACEX_FP32_ONLY
     /* Use INT8 VNNI for large matmuls where VNNI throughput > quant overhead.
      * For small K*N (<4096), FP32 packed is faster due to zero quant overhead. */
     if (_g_weights && _g_weights->mm) {
@@ -554,6 +539,7 @@ static inline void matmul_wp(const float* A, float* C,
             }
         }
     }
+#endif
     matmul_fp32_packed(A, fp->data, C, M, fp->K, fp->N);
 }
 static void matmul_wpb(const float* A, float* C, const float* bias,
@@ -962,12 +948,12 @@ static int engine_init(const char* weights_path, Weights* weights, const char* l
         fprintf(stderr, "Failed to load %s\n", weights_path);
         goto fail;
     }
-    /* Allocate packed MatMul weight arrays */
-    weights->mm = (PackedMM*)calloc(weights->n_tensors, sizeof(PackedMM));
     weights->fp = (PackedFP32*)calloc(weights->n_tensors, sizeof(PackedFP32));
+    if (!weights->fp) goto fail;
 
-
-    if (!weights->mm || !weights->fp) goto fail;
+#ifndef FACEX_FP32_ONLY
+    weights->mm = (PackedMM*)calloc(weights->n_tensors, sizeof(PackedMM));
+    if (!weights->mm) goto fail;
 
     /* Pre-pack MatMul weights to INT8 c8 format */
     {
@@ -1066,6 +1052,8 @@ static int engine_init(const char* weights_path, Weights* weights, const char* l
             free(w_int8);
         }
     }
+
+#endif
 
     /* Pre-pack FP32 MatMul weights into column-panel format [ceil(N/8), K, 8] */
     {

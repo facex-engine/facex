@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 GROUPS = 15
 
 
-def fixture_views(weights):
+def fixture_patches():
     patches = []
     items = json.loads((HERE / "golden/summary.json").read_text())["items"]
     for item in items:
@@ -34,9 +34,17 @@ def fixture_views(weights):
             box = tuple(np.rint(xy + [dx, dy, dx, dy]).astype(int))
             patch = image.crop(box).resize((112, 112), Image.Resampling.BILINEAR)
             patches.append((np.asarray(patch, dtype='f') / 127.5 - 1).transpose(2, 0, 1))
-    result = subprocess.run([HERE.parent / 'facex-cli', weights, '--batch'],
-                            input=np.asarray(patches).tobytes(), capture_output=True, check=True)
+    return np.asarray(patches).tobytes()
+
+
+def embed_patches(weights, patches, executable):
+    result = subprocess.run([executable, weights, '--batch'], input=patches,
+                            capture_output=True, check=True)
     return np.frombuffer(result.stdout, dtype='f').reshape(GROUPS, 9, 512)
+
+
+def fixture_views(weights):
+    return embed_patches(weights, fixture_patches(), HERE.parent / 'facex-cli')
 
 
 def kernel(path):

@@ -251,6 +251,7 @@ void softmax_fp32(float* x, int N, int C) {
 /* ============ Dynamic INT8 MatMul ============ */
 /* C[M,N] = A_fp32[M,K] @ W_int8_packed[K,N], with dynamic A quantization.
  * W is pre-packed in c8 format. A is quantized per-tensor at runtime. */
+#ifndef FACEX_FP32_ONLY
 void matmul_dynamic_int8(const float* A_fp32, int M, int K, int N,
                          const void* W_packed, const int32_t* col_sums,
                          const float* w_scales, float* C_fp32)
@@ -441,7 +442,7 @@ void matmul_dynamic_int8(const float* A_fp32, int M, int K, int N,
 #endif
 }
 
-/* matmul_dynamic_int8_gelu not needed — GELU already vectorized and fast */
+#endif
 
 /* ============ MatMul FP32 (AVX2 register-tiled, auto-INT8 for large K) ============ */
 /* C[M,N] = A[M,K] @ B[K,N]

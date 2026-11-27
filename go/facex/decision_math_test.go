@@ -481,6 +481,9 @@ func TestDecisionModelReplay(t *testing.T) {
 	oldPolicy.WriteString("visit_id,decision\n")
 	newPolicy.WriteString("visit_id,decision\n")
 	fixed, withheld, remaining := 0, 0, 0
+	// Expected gaps for the five held out FP32 probes in fixture order.
+	fp32Gaps := [...]float64{0.017933, 0.036219, 0.170846, 0.082843, 0.084267}
+	fp32 := os.Getenv("FACEX_GALLERY_PROFILE") == "fp32"
 	for truth := 0; truth < 15; truth++ {
 		q := make([]float32, OutputSize)
 		if e = binary.Read(qf, binary.LittleEndian, q); e != nil {
@@ -511,6 +514,12 @@ func TestDecisionModelReplay(t *testing.T) {
 			candidate = "review"
 		}
 		fmt.Fprintf(&newPolicy, "%d,%s\n", truth, candidate)
+		if truth >= len(axes) {
+			t.Logf("probe=%d top_id=%d best=%.8f next=%.8f gap=%.8f decision=%s", truth, id, best, next, gap, candidate)
+			if fp32 && math.Abs(gap-fp32Gaps[truth-len(axes)]) > 2e-5 {
+				t.Errorf("FP32 gap changed for probe %d: %.8f", truth, gap)
+			}
+		}
 		wrong := id != truth
 		visits = append(visits, ReviewVisit{-gap, wrong})
 		if gap <= .1 {
@@ -532,6 +541,9 @@ func TestDecisionModelReplay(t *testing.T) {
 		t.Fatal(comparison, err)
 	}
 	t.Logf("paired report visits=%d known=%d unknown=%d wrong_removed=%d introduced=%d correct_to_review=%d remaining=%d", comparison.Visits, comparison.Known, comparison.Unknown, comparison.WrongRemoved, comparison.WrongIntroduced, comparison.CorrectIDToReview, remaining)
+	if fp32 && (fixed != 4 || withheld != 0 || remaining != 1) {
+		t.Error("FP32 review decisions changed on the model fixture")
+	}
 	before := a.Curve[0].RemainingWrong
 	if before != fixed+remaining {
 		t.Fatal("replay mismatch")

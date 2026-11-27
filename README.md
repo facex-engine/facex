@@ -262,6 +262,14 @@ embedding, _ := ff.Embed(rgbImage)
 sim := facex.CosSim(embA, embB)
 ```
 
+For EdgeFace XS deployments that need close agreement across x86 CPU profiles,
+build the FP32 engine with `make cli-fp32` and set `Config.Exe` to
+`"./facex-cli-fp32"` for either `New` or `NewEmbedPool`. It uses the same
+weights and wire protocol and runs the matrix products without dynamic INT8
+quantization. Use the same engine for enrollment and queries. When switching
+an existing gallery, recompute its templates and validate decision thresholds
+on representative visits. Measure latency on the deployment CPU.
+
 ### CLI (any language via stdin/stdout)
 
 ```bash
