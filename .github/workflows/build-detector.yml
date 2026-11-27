@@ -27,7 +27,7 @@ jobs:
           docker build -t facex-local .
           docker run -d --rm --name facex-ci -p 127.0.0.1:8080:8080 -v "$PWD/data/edgeface_xs_fp32.bin:/app/weights/edgeface_xs_fp32.bin:ro" -v "$PWD/weights/yunet_fp32.bin:/app/weights/yunet_fp32.bin:ro" facex-local
           trap 'docker logs facex-ci; docker stop facex-ci >/dev/null' EXIT
-          curl -fsS --retry 12 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/health
+          curl -fsS --retry 20 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/health
           curl -fsS -F file=@data/test_face.jpg http://127.0.0.1:8080/embed -o "$RUNNER_TEMP/embed.json"
           curl -fsS -F file=@data/test_face.jpg 'http://127.0.0.1:8080/detect?embedding_format=base64_f32le' -o "$RUNNER_TEMP/detect.json"
           python - "$RUNNER_TEMP" <<'PY'
