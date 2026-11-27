@@ -28,6 +28,10 @@ jobs:
         env:
           FACEX_GALLERY_SCALE: '1'
         run: go test -v -run '^TestIdentityGalleryScale$' -count=1 ./...
+      - name: Verify threshold calibration on one million labeled scores
+        env:
+          FACEX_GALLERY_SCALE: '1'
+        run: go test -v -run '^TestCalibrationMillion$' -count=1 ./...
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
