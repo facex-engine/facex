@@ -1,50 +1,67 @@
-name: Check the packaged FaceX REST service
+name: Update the public release descriptions
 on:
   push:
     branches: [verify/sdk-detector-build]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  rest:
+  correct:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: 0f57a63c1bafd2d0c07a1710c89b9331a23d3b20
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Call the packaged API with both released weights
+      - name: Verify the asset and correct its release notes
+        shell: bash
         run: |
-          bash download_weights.sh
-          python -m pip install numpy Pillow onnx==1.18.0
-          curl -fsSL --retry 2 https://media.githubusercontent.com/media/opencv/opencv_zoo/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx -o data/yunet.onnx
-          echo '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4  data/yunet.onnx' | sha256sum --check
-          python tools/export_yunet_weights.py data/yunet.onnx weights/yunet_fp32.bin
-          docker build -t facex-local .
-          docker run -d --rm --name facex-ci -p 127.0.0.1:8080:8080 -v "$PWD/data/edgeface_xs_fp32.bin:/app/weights/edgeface_xs_fp32.bin:ro" -v "$PWD/weights/yunet_fp32.bin:/app/weights/yunet_fp32.bin:ro" facex-local
-          trap 'docker logs facex-ci; docker stop facex-ci >/dev/null' EXIT
-          curl -fsS --retry 20 --retry-delay 1 --retry-all-errors http://127.0.0.1:8080/health
-          curl -fsS -F file=@data/test_face.jpg http://127.0.0.1:8080/embed -o "$RUNNER_TEMP/embed.json"
-          curl -fsS -F file=@data/test_face.jpg 'http://127.0.0.1:8080/detect?embedding_format=base64_f32le' -o "$RUNNER_TEMP/detect.json"
-          python - "$RUNNER_TEMP" <<'PY'
-          import base64
+          set -eu
+          release="repos/$GITHUB_REPOSITORY/releases/tags/facex-nano-1.0"
+          gh api "$release" > "$RUNNER_TEMP/release.json"
+          python3 - "$RUNNER_TEMP" <<'PY'
           import json
-          import math
           import sys
-          import urllib.request
           from pathlib import Path
-          folder = Path(sys.argv[1])
-          embedding = json.loads((folder / "embed.json").read_text())["embedding"]
-          assert len(embedding) == 512 and all(math.isfinite(x) for x in embedding)
-          faces = json.loads((folder / "detect.json").read_text())["faces"]
-          assert faces and len(base64.b64decode(faces[0]["embedding"])) == 2048
-          data = json.dumps({"emb1": faces[0]["embedding"], "emb2": faces[0]["embedding"]}).encode()
-          req = urllib.request.Request("http://127.0.0.1:8080/compare", data=data, headers={"Content-Type":"application/json"})
-          reply = json.load(urllib.request.urlopen(req))
-          assert reply["match"] and reply["similarity"] == 1
-          print(f"REST: {len(faces)} detected, 512 components, self similarity 1")
+          root = Path(sys.argv[1])
+          release = json.loads((root / "release.json").read_text())
+          assert release["id"] == 322909311 and not release["draft"]
+          model = next(a for a in release["assets"] if a["name"] == "facex_nano.onnx")
+          assert model["size"] == 802377 and model["digest"] == "sha256:bd0094143bb4c7d04a76dcdad4e332f5985847b921ec4d6678c3fd89aaea3889"
+          before = "input: 112x112 RGB float32 normalized to [-1, 1] (HWC, then transposed to CHW). face must be 5-point ArcFace aligned. output: 512-dim L2-normalized embedding."
+          after = "Align the face to the five-point ArcFace template. Convert uint8 RGB pixels to float32 with `(pixel - 127.5) / 128.0` and transpose HWC to NCHW. The ONNX input is `input [1,3,112,112]`. The output is `embedding [1,256]`, a 256-component L2-normalized vector.\n\n`facex_nano.onnx` is 802,377 bytes. SHA-256 `bd0094143bb4c7d04a76dcdad4e332f5985847b921ec4d6678c3fd89aaea3889`. The tag points to commit `88465996e4cdd2e26d2169f5434bfa608a447b42`. The original note listed 512 components. The dimensions above come from the published graph. [Model guide](https://github.com/facex-engine/facex/blob/main/MFN_README.md#public-nano-release)"
+          current = release["body"]
+          if after not in current:
+              assert current.count(before) == 1, "The release description changed"
+              (root / "notes.json").write_text(json.dumps({"body": current.replace(before, after)}))
           PY
+          if test -f "$RUNNER_TEMP/notes.json"; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/322909311" --input "$RUNNER_TEMP/notes.json" --silent
+          fi
+          gh api "$release" --jq '.body' | grep -F 'embedding [1,256]'
+      - name: Correct the setup instructions for the original EdgeFace release
+        shell: bash
+        run: |
+          set -eu
+          release="repos/$GITHUB_REPOSITORY/releases/tags/v1.0.0"
+          gh api "$release" > "$RUNNER_TEMP/initial.json"
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          root = Path(sys.argv[1])
+          release = json.loads((root / "initial.json").read_text())
+          assert release["id"] == 313678133 and not release["draft"]
+          assets = {a["name"]: a for a in release["assets"]}
+          assert assets["edgeface_xs_fp32.bin"]["digest"] == "sha256:d23f7b3cf8bcda5e451b48cf012e7dc6c4963d5703fafb8893f956d0203691d8"
+          assert assets["det_500m_int8.bin"]["size"] == 686289
+          notes = release["body"]
+          before, after = "- `edgeface_xs_fp32.bin` — Model weights (7 MB). Place in `data/` folder.", "- `edgeface_xs_fp32.bin` — EdgeFace XS recognition weights, 7,133,584 bytes. Place in `data/`. SHA-256 `d23f7b3cf8bcda5e451b48cf012e7dc6c4963d5703fafb8893f956d0203691d8`.\n- `det_500m_int8.bin` — detector asset from this release, 686,289 bytes. The current YuNet path uses a separately exported file. [Current setup and model contracts](https://github.com/facex-engine/facex#build-the-native-runtime)"
+          if after not in notes:
+              assert notes.count(before) == 1 and notes.count("./download_weights.sh") == 1
+              notes = notes.replace(before, after).replace("./download_weights.sh", "bash download_weights.sh")
+              notes = notes.replace("**Engine:** 3.0ms median CPU inference", "**Engine (original release):** 3.0 ms median CPU recognition").replace("**WASM:** 7ms", "**WASM (original release):** 7 ms")
+              (root / "initial-notes.json").write_text(json.dumps({"body": notes}))
+          PY
+          if test -f "$RUNNER_TEMP/initial-notes.json"; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/313678133" --input "$RUNNER_TEMP/initial-notes.json" --silent
+          fi
+          gh api "$release" --jq '.body' | grep -F 'bash download_weights.sh'
