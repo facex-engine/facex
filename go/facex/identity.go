@@ -98,6 +98,27 @@ func (p *identityGroup) buildCaps() {
 	}
 }
 
+func newIdentityGroup(id int64, count int) identityGroup {
+	return identityGroup{
+		id:    id,
+		rows:  make([]float32, 0, count*OutputSize),
+		norms: make([]float64, 0, count),
+	}
+}
+
+func (p *identityGroup) addView(row []float32) error {
+	norm, err := vectorNorm(row)
+	if err != nil {
+		return err
+	}
+	if norm == 0 {
+		return errors.New("facex: zero enrollment vector")
+	}
+	p.rows = append(p.rows, row...)
+	p.norms = append(p.norms, norm)
+	return nil
+}
+
 // NewIdentityGallery copies the enrollment vectors. Repeat an ID for additional
 // photos of the same person. IDs must be nonnegative and vectors finite and nonzero.
 func NewIdentityGallery(embeddings [][]float32, ids []int64) (*IdentityGallery, error) {
@@ -121,20 +142,12 @@ func NewIdentityGallery(embeddings [][]float32, ids []int64) (*IdentityGallery, 
 		counts[i]++
 	}
 	for i, count := range counts {
-		g.people[i].rows = make([]float32, 0, count*OutputSize)
-		g.people[i].norms = make([]float64, 0, count)
+		g.people[i] = newIdentityGroup(g.people[i].id, count)
 	}
 	for i, row := range embeddings {
-		norm, err := vectorNorm(row)
-		if err != nil {
+		if err := g.people[index[ids[i]]].addView(row); err != nil {
 			return nil, fmt.Errorf("enrollment row %d: %w", i, err)
 		}
-		if norm == 0 {
-			return nil, fmt.Errorf("facex: zero enrollment row %d", i)
-		}
-		p := &g.people[index[ids[i]]]
-		p.rows = append(p.rows, row...)
-		p.norms = append(p.norms, norm)
 	}
 	for i := range g.people {
 		g.people[i].buildCaps()
@@ -153,7 +166,7 @@ func (p *identityGroup) capBounds(c *identityCap, query []float32, norm float64)
 }
 
 func (g *IdentityGallery) validate(score, margin float64) error {
-	if g == nil || len(g.people) == 0 {
+	if g == nil || g.people == nil {
 		return errors.New("facex: empty identity gallery")
 	}
 	if !(score >= -1 && score <= 1 && margin >= 0 && margin <= 2) {
@@ -163,7 +176,7 @@ func (g *IdentityGallery) validate(score, margin float64) error {
 }
 
 func (g *IdentityGallery) screen(ctx context.Context, query []float32, norm, score, margin float64) (int64, bool, float64) {
-	if norm == 0 || (len(g.people) == 1 && margin > 0) {
+	if len(g.people) == 0 || norm == 0 || (len(g.people) == 1 && margin > 0) {
 		return rejectedID, true, 0
 	}
 	bestLower, first, second := math.Inf(-1), math.Inf(-1), math.Inf(-1)
