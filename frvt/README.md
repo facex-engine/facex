@@ -12,9 +12,11 @@ The adapter selects the largest detection in each image and averages embeddings 
 
 ## Build on Linux
 
-Set `ORT` to an extracted Linux x86-64 ONNX Runtime SDK with `include/` and `lib/`. From the repository root:
+Set `ORT` to a Linux x86-64 ONNX Runtime SDK containing `include/` and `lib/`. The example prepares version 1.21.0 from Microsoft’s NuGet package using `curl` and `unzip`. From the repository root:
 
 ```sh
+export ORT="$PWD/frvt/ort-sdk"
+sh frvt/prepare_ort.sh "$ORT"
 cmake -S frvt -B frvt/build -DONNXRUNTIME_ROOT="$ORT" -DCMAKE_BUILD_TYPE=Release
 cmake --build frvt/build --parallel
 cmake --install frvt/build --prefix "$PWD/frvt/bundle"

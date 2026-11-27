@@ -8,15 +8,12 @@ on:
       - 'include/**'
       - 'tests/**'
       - 'nn2/**'
-      - 'frvt/src/**'
+      - 'frvt/**'
+      - 'training/scripts/binformat.py'
       - 'docker/**'
       - 'python/**'
       - 'wasm/**'
       - 'download_weights.sh'
-      - 'tests/bench_gallery_codes.py'
-      - 'tests/bench_gallery_groups.py'
-      - 'tests/check_gallery_profiles.py'
-      - 'python/facex/gallery.py'
       - '.github/workflows/go-gallery.yml'
   workflow_dispatch:
 
@@ -150,8 +147,7 @@ jobs:
       - name: Build the XS adapter and check its public template interface
         run: |
           sdk="$RUNNER_TEMP/onnxruntime-linux-x64-1.21.0"
-          curl -fsSL --retry 2 https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-1.21.0.tgz -o "$RUNNER_TEMP/ort.tgz"
-          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
+          sh frvt/prepare_ort.sh "$sdk"
           cmake -S frvt -B "$RUNNER_TEMP/frvt-build" -DONNXRUNTIME_ROOT="$sdk" -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/frvt-build" --parallel 2
           cmake --install "$RUNNER_TEMP/frvt-build" --prefix "$RUNNER_TEMP/frvt"

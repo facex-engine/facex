@@ -12,7 +12,7 @@ Four recognition architectures share a parametric C engine. The C engine takes E
 | Input | `input`, float32 `[1,3,112,112]`, aligned RGB, each uint8 channel converted with `(pixel - 127.5) / 128.0` |
 | Output | `embedding`, float32 `[1,256]`, L2 normalized in the graph |
 
-The release notes describe a 512-component output. Inspection and execution of the asset above give 256 components. The training recipe names MS1M-RefineV2. The released metadata does not link this artifact to a specific dataset snapshot and redistribution permission record. [Release](https://github.com/facex-engine/facex/releases/tag/facex-nano-1.0) · [Provenance notes](README.md#licensing-and-provenance)
+The original release notes described a 512-component output. Inspection and execution of the asset above give 256 components. The training recipe names MS1M-RefineV2. The released metadata does not link this artifact to a specific dataset snapshot and redistribution permission record. [Release](https://github.com/facex-engine/facex/releases/tag/facex-nano-1.0) · [Provenance notes](README.md#licensing-and-provenance)
 
 ## Local EFM3 exports
 

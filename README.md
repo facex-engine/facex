@@ -84,7 +84,7 @@ The embedding commands process complete frames until EOF. Each little-endian req
 
 ## Models and measurements
 
-The released **facex_nano.onnx** has input **input [1,3,112,112]** and output **embedding [1,256]**. Use five-point ArcFace alignment and planar RGB float32. The training and evaluation scripts convert each 8-bit channel with `(pixel - 127.5) / 128.0`. The graph applies L2 normalization. The original release notes list 512 dimensions. The hash above identifies the 256-dimensional artifact. [Tagged source](https://github.com/facex-engine/facex/tree/88465996e4cdd2e26d2169f5434bfa608a447b42) · [MobileFaceNet guide](MFN_README.md)
+The released **facex_nano.onnx** has input **input [1,3,112,112]** and output **embedding [1,256]**. Use five-point ArcFace alignment and planar RGB float32. The training and evaluation scripts convert each 8-bit channel with `(pixel - 127.5) / 128.0`. The graph applies L2 normalization. The original release notes listed 512 dimensions. The hash above identifies the 256-dimensional artifact. [Tagged source](https://github.com/facex-engine/facex/tree/88465996e4cdd2e26d2169f5434bfa608a447b42) · [MobileFaceNet guide](MFN_README.md)
 
 Historical project measurements on LFW used 10 folds. The threshold was selected on nine folds before evaluation on the held-out fold. For deployment, measure false accepts and false rejects on representative labeled pairs. [Evaluation script](training/scripts/lfw_eval.py)
 
