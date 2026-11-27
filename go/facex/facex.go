@@ -15,8 +15,8 @@
 //	// input: HWC float32 [-1, 1], exactly 3*112*112 = 37632 floats.
 //	emb, err := fx.Embed(input)  // []float32 length 512
 //
-// Thread-safety: FaceX is NOT goroutine-safe. Create one instance per
-// goroutine, or wrap with your own sync.Mutex.
+// A FaceX instance serializes its calls. EmbedPool supports concurrent engines
+// and context cancellation.
 package facex
 
 import (
@@ -51,7 +51,6 @@ type FaceX struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.ReadCloser
-	stderr io.ReadCloser
 	mu     sync.Mutex
 	closed bool
 }
@@ -93,16 +92,16 @@ func New(cfg Config) (*FaceX, error) {
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		_ = stdin.Close()
 		return nil, err
 	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, err
-	}
+	// Leave Stderr nil so engine diagnostics cannot fill an unread pipe.
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, err
 	}
-	return &FaceX{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr}, nil
+	return &FaceX{cmd: cmd, stdin: stdin, stdout: stdout}, nil
 }
 
 // Embed runs a single forward pass. input must be exactly 3*112*112 floats

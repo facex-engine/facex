@@ -59,3 +59,9 @@ jobs:
           PY
           cd go/facex
           go test -v -run '^TestIdentityGalleryScale$' -count=1 ./...
+      - name: Verify concurrent engine replies against serial inference
+        working-directory: go/facex
+        env:
+          FACEX_POOL_TEST_EXE: ${{ github.workspace }}/facex-cli
+          FACEX_POOL_TEST_WEIGHTS: ${{ runner.temp }}/edgeface_xs_fp32.bin
+        run: go test -race -v -timeout=90s -run '^TestPoolRealEngine$' -count=1 ./...
