@@ -138,3 +138,5 @@ class LivenessDetector {
     return Math.sqrt(variance) / mean; // coefficient of variation
   }
 }
+
+if (typeof module !== 'undefined' && module.exports) module.exports = {LivenessDetector};

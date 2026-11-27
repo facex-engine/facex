@@ -21,12 +21,12 @@ function openCacheDB() {
 
 async function getCached(key) {
   const db = await openCacheDB();
-  return new Promise((resolve) => {
+  try { return await new Promise((resolve) => {
     const tx = db.transaction(CACHE_STORE, 'readonly');
     const req = tx.objectStore(CACHE_STORE).get(key);
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = () => resolve(null);
-  });
+  }); } finally { db.close(); }
 }
 
 async function putCached(key, data) {
@@ -35,8 +35,8 @@ async function putCached(key, data) {
     const tx = db.transaction(CACHE_STORE, 'readwrite');
     tx.objectStore(CACHE_STORE).put(data, key);
     tx.oncomplete = () => resolve();
-    tx.onerror = () => resolve();
-  });
+    tx.onabort = tx.onerror = () => resolve();
+  }); } finally { db.close(); }
 }
 
 /**
@@ -48,14 +48,23 @@ async function putCached(key, data) {
  */
 async function loadWeightsCached(url, key, onProgress) {
   // Try cache first
-  const cached = await getCached(key);
+  const absolute = new URL(url, globalThis.document?.baseURI || globalThis.location.href).href;
+  key = [key, absolute];
+  const cached = await getCached(key).catch(() => null);
   if (cached) {
     if (onProgress) onProgress(cached.byteLength, cached.byteLength);
     return new Uint8Array(cached);
   }
 
   // Fetch from network with progress
-  const response = await fetch(url);
+  const response = await fetch(absolute);
+  if (!response.ok) throw new Error('Weight request failed with status ' + response.status);
+  if (!onProgress || !response.body) {
+    const data = await response.arrayBuffer();
+    await putCached(key, data).catch(() => {});
+    onProgress?.(data.byteLength, data.byteLength);
+    return new Uint8Array(data);
+  }
   const total = parseInt(response.headers.get('content-length')) || 0;
   const reader = response.body.getReader();
   const chunks = [];
@@ -78,7 +87,9 @@ async function loadWeightsCached(url, key, onProgress) {
   }
 
   // Store in cache
-  await putCached(key, data.buffer);
+  await putCached(key, data.buffer).catch(() => {});
 
   return data;
 }
+
+if (typeof module !== 'undefined' && module.exports) module.exports = {loadWeightsCached};

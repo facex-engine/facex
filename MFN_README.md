@@ -88,18 +88,18 @@ make mfn-example      # tiny "embed + similarity" demo
 ```c
 #include "facex_mfn.h"
 
-MfnEngine engine;
-mfn_engine_init("weights/facex_standard.bin", &engine);
+MfnEngine *engine = mfn_open("weights/facex_standard.bin");
+if (!engine) return 1;
 
-int D = mfn_embedding_dim(&engine);      // 256 (nano) or 512 (others)
+int D = mfn_embedding_dim(engine);      // 256 (nano) or 512 (others)
 float emb[512];
-mfn_engine_forward(&engine, input_chw, emb);
+mfn_engine_forward(engine, input_chw, emb);
 // input_chw: [3 * 112 * 112] fp32, values in [-1, 1], CHW layout
 
 float sim = mfn_similarity(emb_a, emb_b, D);
 // Calibrate the threshold on representative labeled pairs.
 
-mfn_engine_free(&engine);
+mfn_close(engine);
 ```
 
 ### Image preprocessing

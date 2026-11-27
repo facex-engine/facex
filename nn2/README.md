@@ -28,6 +28,10 @@ Detection accuracy: 4/4 on bus.jpg (person 86%, bus 80%, person 72%, person 71%)
 
 ## Quick Start
 
+On x86-64 Linux, run `make -j2 -C nn2` from the FaceX repository root. This builds `nn2`, `nn2_img`, `nn2_nvr` and `nanodet`. Run `./nn2/nn2_img weights.bin photo.jpg` with the appropriate exported YOLO weights. The runtime selects the GEMM paths enabled by the compiler target. A single NN2 process shares a worker pool, so serialize pool lifecycle and detector calls or use separate processes.
+
+The commands below cover the Windows build and its additional NVR service.
+
 ```bash
 # Build everything
 bash build.sh

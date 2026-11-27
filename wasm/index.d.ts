@@ -1,6 +1,6 @@
 /**
  * facex-wasm — Face recognition in the browser.
- * 75 KB WASM. Detect, align, embed, verify.
+ * Detect, align, embed, verify.
  * No server. No dependencies.
  */
 
@@ -12,6 +12,8 @@
 export interface FaceXOptions {
   /** Detection input size in pixels (default: 160) */
   detSize?: number;
+  /** Directory containing detect.wasm and facex.wasm. */
+  wasmBaseUrl?: string;
   /** Cosine similarity threshold for a positive match (default: 0.3) */
   threshold?: number;
   /** URL to detector weights file (default: 'yunet_fp32.bin') */
@@ -136,6 +138,7 @@ export declare class FaceXSDK {
    * @returns The SDK instance for chaining.
    */
   load(): Promise<FaceXSDK>;
+  close(): Promise<void>;
 
   /**
    * Detect faces in a video, image, or canvas element.

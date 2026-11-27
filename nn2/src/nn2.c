@@ -19,6 +19,17 @@ const char* nn2_version(void) { return "0.1.0"; }
 /* Declared in net.c */
 int nn2_load_weights(NN2* ctx, const char* path);
 
+/* The standard workspace covers a full 80 class COCO head. Larger custom
+ * heads also need their additional first-scale features and output rows. */
+static size_t workspace_size(int size, int classes) {
+    size_t base = size > 320 ? (256u << 20) : (64u << 20);
+    size_t head = (size_t)(size / 8) * (size / 8);
+    size_t anchors = head + head / 4 + head / 16;
+    size_t extra = classes > 80 ? (size_t)(classes - 80) : 0;
+    if (extra > (SIZE_MAX - base) / ((anchors + head) * sizeof(float))) return 0;
+    return base + extra * (anchors + head) * sizeof(float);
+}
+
 NN2* nn2_init(const char* weights_path, int n_threads)
 {
     NN2* ctx = (NN2*)calloc(1, sizeof(NN2));
@@ -32,20 +43,21 @@ NN2* nn2_init(const char* weights_path, int n_threads)
         ctx->dfl_weight[i] = (float)i;
 
     /* Load weights */
-    if (nn2_load_weights(ctx, weights_path) != 0) {
-        free(ctx);
+    if (!weights_path || nn2_load_weights(ctx, weights_path) != 0) {
+        nn2_free(ctx);
         return NULL;
     }
 
     /* Allocate workspace: 256MB for 640, 64MB for 320 */
-    ctx->ws_size = (ctx->input_size >= 640) ? (256 << 20) : (64 << 20);
-    ctx->workspace = (float*)malloc(ctx->ws_size);
+    ctx->ws_size = workspace_size(ctx->input_size, ctx->num_classes);
+    ctx->workspace = ctx->ws_size ? malloc(ctx->ws_size) : NULL;
     if (!ctx->workspace) {
         fprintf(stderr, "nn2: workspace alloc failed\n");
         nn2_free(ctx);
         return NULL;
     }
 
+#ifdef __AVX512F__
     /* Pre-pack weight matrices for all conv layers (BLIS-style A-packing).
      * Eliminates stride-lda access during GEMM — weights become sequential in memory. */
     {
@@ -80,6 +92,8 @@ NN2* nn2_init(const char* weights_path, int n_threads)
         #undef PACK_CONV
     }
 
+#endif
+
     /* Detect fused normalization: if first conv weights are very small (< 0.1),
      * they were pre-divided by 255 at export time → skip normalize in preprocessing. */
     {
@@ -97,8 +111,8 @@ NN2* nn2_init(const char* weights_path, int n_threads)
     }
 
     /* Thread pool */
-    ctx->n_threads = n_threads;
     nn2_tp_init(n_threads);
+    ctx->n_threads = nn2_tp_num_threads();
 
     fprintf(stderr, "nn2: loaded model (classes=%d, input=%d, threads=%d)\n",
             ctx->num_classes, ctx->input_size, nn2_tp_num_threads());
@@ -317,11 +331,22 @@ int nn2_detect(NN2* ctx, const uint8_t* rgb_hwc, int width, int height,
 
 void nn2_set_conf_threshold(NN2* ctx, float threshold) { ctx->conf_thresh = threshold; }
 void nn2_set_nms_threshold(NN2* ctx, float threshold)  { ctx->nms_thresh = threshold; }
-void nn2_set_input_size(NN2* ctx, int size)             { ctx->input_size = size; }
+void nn2_set_input_size(NN2* ctx, int size) {
+    if (!ctx || size < 32 || size > 640 || size % 32) return;
+    size_t required = workspace_size(size, ctx->num_classes);
+    if (!required) return;
+    if (ctx->ws_size < required) {
+        float *workspace = realloc(ctx->workspace, required);
+        if (!workspace) return;
+        ctx->workspace = workspace;
+        ctx->ws_size = required;
+    }
+    ctx->input_size = size;
+}
 
 /* ============ Cleanup ============ */
 
-static void free_conv(ConvLayer* L) { free(L->w); _aligned_free(L->w_packed); free(L->b); free(L->w_wino); }
+static void free_conv(ConvLayer* L) { free(L->w); free(L->w_packed); free(L->b); free(L->w_wino); }
 static void free_c2f(C2fBlock* blk) {
     free_conv(&blk->cv1);
     free_conv(&blk->cv2);
@@ -345,6 +370,6 @@ void nn2_free(NN2* ctx)
         for (int j = 0; j < 3; j++) free_conv(&ctx->head[s].cls[j]);
     }
     free(ctx->workspace);
-    nn2_tp_destroy();
+    if (ctx->n_threads) nn2_tp_destroy();
     free(ctx);
 }

@@ -1,11 +1,13 @@
 /**
  * FaceX Browser SDK — Face recognition in WebAssembly.
- * 74 KB engine. No server. No dependencies.
+ * No server. No dependencies.
  */
 
 export interface FaceXOptions {
   /** Detection input size (default: 160) */
   detSize?: number;
+  /** Directory containing detect.wasm and facex.wasm. */
+  wasmBaseUrl?: string;
   /** Cosine similarity threshold for match (default: 0.3) */
   threshold?: number;
   /** URL to detector weights (default: 'det_500m_int8.bin') */
@@ -40,7 +42,7 @@ export interface ProcessResult {
 export interface VerifyResult {
   /** Whether faces match */
   match: boolean;
-  /** Cosine similarity 0-1 */
+  /** Cosine similarity from -1 to 1 */
   similarity: number;
   /** Detected faces */
   faces: Face[];
@@ -69,6 +71,7 @@ export declare class FaceXSDK {
 
   /** Load engines and weights. Call once before using. */
   load(): Promise<FaceXSDK>;
+  close(): Promise<void>;
 
   /** Detect faces in video/image/canvas */
   detect(source: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement): Face[];

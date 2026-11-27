@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     }
     norm = sqrtf(norm);
 
-    printf("Embedding norm: %.6f (should be ~1.0)\n", norm);
+    printf("Embedding norm: %.6f (raw EdgeFace output)\n", norm);
     printf("NaN values: %d (should be 0)\n", nan_count);
     printf("Embedding[0..7]: ");
     for (int i = 0; i < 8; i++) printf("%.6f ", emb[i]);

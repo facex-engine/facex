@@ -21,6 +21,10 @@ extern "C" {
 /* Opaque handle (defined in facex_mfn.c). */
 typedef struct MfnEngine MfnEngine;
 
+/* Owning API. NULL indicates a load error. */
+MfnEngine *mfn_open(const char *path);
+void mfn_close(MfnEngine *engine);
+
 /*
  * Initialize from EFM3 weights file.
  *   path: path to .bin
@@ -45,7 +49,7 @@ int mfn_embedding_dim(const MfnEngine *engine);
 
 /*
  * Cosine similarity between two embeddings, [-1, 1].
- * > 0.3 typically = same person.
+ * Calibrate the decision threshold using representative labeled pairs.
  */
 float mfn_similarity(const float *a, const float *b, int dim);
 

@@ -1,7 +1,7 @@
 {
   "name": "facex-wasm",
   "version": "0.1.0",
-  "description": "Face recognition in the browser. 75 KB WASM. Detect, align, embed, verify — no server, no dependencies.",
+  "description": "Local face detection, alignment and EdgeFace recognition in WebAssembly.",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [

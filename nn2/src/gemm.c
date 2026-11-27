@@ -10,6 +10,8 @@
 #include "nn2_internal.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
+#include "gemm_vector.h"
 #include <immintrin.h>
 
 /* ============================================================
@@ -39,7 +41,7 @@ static inline void ukernel_6x32_avx512(
     for(int k=0;k<K;k++){
         const float*bp=B+k*ldb;
         if(k+2<K)_mm_prefetch((const char*)(B+(k+2)*ldb),_MM_HINT_T0);
-        __m512 b0=_mm512_loadu_ps(bp),b1=_mm512_loadu_ps(bp+16);
+        __m512 b0=nn2_load_columns(bp,nr,0),b1=nn2_load_columns(bp,nr,16);
         __m512 va;
         va=_mm512_set1_ps(a0[k]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01);
         va=_mm512_set1_ps(a1[k]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11);
@@ -67,7 +69,7 @@ static inline void ukernel_6x32_avx512(
 typedef struct {
     int M, K, N;
     const float* A; int lda;
-    const float* B;
+    const float* B; int ldb;
     float* C; int ldc;
 } GemmCtx;
 
@@ -81,7 +83,7 @@ static void gemm_avx512_worker(void* arg, int start, int end)
         for (int m = 0; m < g->M; m += NN2_MR) {
             int mr = (m + NN2_MR <= g->M) ? NN2_MR : g->M - m;
             ukernel_6x32_avx512(g->K, g->A + m*g->lda, g->lda,
-                                g->B + n, g->N,
+                                g->B + n, g->ldb,
                                 g->C + m*g->ldc + n, g->ldc, mr, nr);
         }
     }
@@ -102,6 +104,16 @@ static inline void ukernel_6x16_avx2(
     float* restrict C, int ldc,
     int mr, int nr)
 {
+    if (nr < 16) {
+        for (int i = 0; i < mr; i++) {
+            for (int j = 0; j < nr; j++) {
+                float sum = 0;
+                for (int k = 0; k < K; k++) sum += A[i * lda + k] * B[k * ldb + j];
+                C[i * ldc + j] = sum;
+            }
+        }
+        return;
+    }
     __m256 c00=_mm256_setzero_ps(), c01=_mm256_setzero_ps();
     __m256 c10=_mm256_setzero_ps(), c11=_mm256_setzero_ps();
     __m256 c20=_mm256_setzero_ps(), c21=_mm256_setzero_ps();
@@ -168,7 +180,7 @@ static void gemm_avx2_worker(void* arg, int start, int end)
         for (int m = 0; m < g->M; m += NN2_MR) {
             int mr = (m + NN2_MR <= g->M) ? NN2_MR : g->M - m;
             ukernel_6x16_avx2(g->K, g->A + m*g->lda, g->lda,
-                              g->B + n, g->N,
+                              g->B + n, g->ldb,
                               g->C + m*g->ldc + n, g->ldc, mr, nr);
         }
     }
@@ -180,8 +192,15 @@ static void gemm_avx2_worker(void* arg, int start, int end)
 
 float* nn2_pack_weight_a(const float* A, int M, int K)
 {
+    if (!A || M <= 0 || K <= 0) return NULL;
+#ifndef __AVX512F__
+    size_t bytes = (size_t)M * K * sizeof(float);
+    float *copy = malloc(bytes);
+    if (copy) memcpy(copy, A, bytes);
+    return copy;
+#else
     int panels = (M + NN2_MR - 1) / NN2_MR;
-    float* Ap = (float*)_aligned_malloc((size_t)panels * K * NN2_MR * sizeof(float), 64);
+    float *Ap = malloc((size_t)panels * K * NN2_MR * sizeof(float));
     if (!Ap) return NULL;
     for (int p = 0; p < panels; p++) {
         for (int k = 0; k < K; k++) {
@@ -192,6 +211,7 @@ float* nn2_pack_weight_a(const float* A, int M, int K)
         }
     }
     return Ap;
+#endif
 }
 
 /* ============ Scalar fallback ============ */
@@ -204,7 +224,7 @@ float* nn2_pack_weight_a(const float* A, int M, int K)
 typedef struct {
     int M, K, N;
     const float* A; int lda;
-    const float* B;
+    const float* B; int ldb;
     float* C; int ldc;
     const float* bias;
     int act;
@@ -212,12 +232,7 @@ typedef struct {
 
 #ifdef __AVX512F__
 
-#include "fast_exp.h"
 #include "gemm_asm.h"
-
-static inline __m512 _fused_silu512(__m512 x) {
-    return _mm512_silu_fast(x);
-}
 
 /* KC block size: keeps B panel (KC×NR×4 bytes) in L1 cache */
 #define KC_BLOCK 256
@@ -249,8 +264,8 @@ static void gemm_fused_avx512_worker(void* arg, int start, int end)
             int k = kc;
             int kend4 = kc + (kb & ~3);
             #define FK(off) { \
-                const float*bp=g->B+(k+(off))*g->N+n; \
-                __m512 b0=_mm512_loadu_ps(bp),b1=_mm512_loadu_ps(bp+16); __m512 va; \
+                const float*bp=g->B+(k+(off))*g->ldb+n; \
+                __m512 b0=nn2_load_columns(bp,nr,0),b1=nn2_load_columns(bp,nr,16); __m512 va; \
                 va=_mm512_set1_ps(a0[k+(off)]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01); \
                 va=_mm512_set1_ps(a1[k+(off)]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11); \
                 va=_mm512_set1_ps(a2[k+(off)]);c20=_mm512_fmadd_ps(va,b0,c20);c21=_mm512_fmadd_ps(va,b1,c21); \
@@ -266,10 +281,7 @@ static void gemm_fused_avx512_worker(void* arg, int start, int end)
             #define FS(i,lo,hi) if(i<mr){ \
                 __m512 vb=_mm512_set1_ps(g->bias[m+(i)]); \
                 lo=_mm512_add_ps(lo,vb);hi=_mm512_add_ps(hi,vb); \
-                if(g->act==1){lo=_fused_silu512(lo);hi=_fused_silu512(hi);} \
-                else if(g->act==3){__m512 vl=_mm512_set1_ps(0.1f),vz=_mm512_setzero_ps(); \
-                    lo=_mm512_mask_mul_ps(lo,_mm512_cmplt_ps_mask(lo,vz),lo,vl); \
-                    hi=_mm512_mask_mul_ps(hi,_mm512_cmplt_ps_mask(hi,vz),hi,vl);} \
+                lo=nn2_activate_vector(lo,g->act);hi=nn2_activate_vector(hi,g->act); \
                 if(nr>=32){_mm512_storeu_ps(C+i*g->ldc,lo);_mm512_storeu_ps(C+i*g->ldc+16,hi);} \
                 else{__mmask16 ml=(nr>=16)?0xFFFF:((__mmask16)1<<nr)-1,mh=(nr<=16)?0:((__mmask16)1<<(nr-16))-1; \
                     _mm512_mask_storeu_ps(C+i*g->ldc,ml,lo);if(mh)_mm512_mask_storeu_ps(C+i*g->ldc+16,mh,hi);} \
@@ -315,7 +327,7 @@ static void packed_fused_worker(void* arg, int start, int end) {
                         #define KCF(off) { \
                             const float* bp = bp_base + (k+(off)) * g->N; \
                             const float* a = ap + (k+(off)) * NN2_MR; \
-                            __m512 b0=_mm512_loadu_ps(bp), b1=_mm512_loadu_ps(bp+16); __m512 va; \
+                            __m512 b0=nn2_load_columns(bp,nr,0), b1=nn2_load_columns(bp,nr,16); __m512 va; \
                             va=_mm512_set1_ps(a[0]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01); \
                             va=_mm512_set1_ps(a[1]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11); \
                             va=_mm512_set1_ps(a[2]);c20=_mm512_fmadd_ps(va,b0,c20);c21=_mm512_fmadd_ps(va,b1,c21); \
@@ -328,7 +340,7 @@ static void packed_fused_worker(void* arg, int start, int end) {
                     for (; k < kb; k++) {
                         const float* bp = bp_base + k * g->N;
                         const float* a = ap + k * NN2_MR;
-                        __m512 b0=_mm512_loadu_ps(bp), b1=_mm512_loadu_ps(bp+16);
+                        __m512 b0=nn2_load_columns(bp,nr,0), b1=nn2_load_columns(bp,nr,16);
                         __m512 va;
                         va=_mm512_set1_ps(a[0]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01);
                         va=_mm512_set1_ps(a[1]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11);
@@ -344,7 +356,7 @@ static void packed_fused_worker(void* arg, int start, int end) {
                 #define FP(i,lo,hi) if(i<mr){ \
                     __m512 vb=_mm512_set1_ps(g->bias[m+(i)]); \
                     lo=_mm512_add_ps(lo,vb);hi=_mm512_add_ps(hi,vb); \
-                    if(g->act==1){lo=_fused_silu512(lo);hi=_fused_silu512(hi);} \
+                    lo=nn2_activate_vector(lo,g->act);hi=nn2_activate_vector(hi,g->act); \
                     if(nr>=32){_mm512_storeu_ps(Cp+i*g->ldc,lo);_mm512_storeu_ps(Cp+i*g->ldc+16,hi);} \
                     else{__mmask16 ml=(nr>=16)?0xFFFF:((__mmask16)1<<nr)-1,mh=(nr<=16)?0:((__mmask16)1<<(nr-16))-1; \
                         _mm512_mask_storeu_ps(Cp+i*g->ldc,ml,lo);if(mh)_mm512_mask_storeu_ps(Cp+i*g->ldc+16,mh,hi);}}
@@ -353,8 +365,6 @@ static void packed_fused_worker(void* arg, int start, int end) {
             }
         }
 }
-#endif /* __AVX512F__ */
-
 /* 2D-tiled packed fused worker: tile index → (m_panel, n_tile) */
 typedef struct { int M,K,N; const float*Ap; const float*B; float*C; int ldc; const float*bias; int act; int n_tiles; } Packed2DCtx;
 
@@ -384,7 +394,7 @@ static void packed_fused_2d_worker(void* arg, int start, int end) {
                 #define KCF2(off) { \
                     const float* bp = bp_base + (k+(off)) * g->N; \
                     const float* a = ap + (k+(off)) * NN2_MR; \
-                    __m512 b0=_mm512_loadu_ps(bp), b1=_mm512_loadu_ps(bp+16); __m512 va; \
+                    __m512 b0=nn2_load_columns(bp,nr,0), b1=nn2_load_columns(bp,nr,16); __m512 va; \
                     va=_mm512_set1_ps(a[0]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01); \
                     va=_mm512_set1_ps(a[1]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11); \
                     va=_mm512_set1_ps(a[2]);c20=_mm512_fmadd_ps(va,b0,c20);c21=_mm512_fmadd_ps(va,b1,c21); \
@@ -397,7 +407,7 @@ static void packed_fused_2d_worker(void* arg, int start, int end) {
             for (; k < kb; k++) {
                 const float* bp = bp_base + k * g->N;
                 const float* a = ap + k * NN2_MR;
-                __m512 b0=_mm512_loadu_ps(bp), b1=_mm512_loadu_ps(bp+16); __m512 va;
+                __m512 b0=nn2_load_columns(bp,nr,0), b1=nn2_load_columns(bp,nr,16); __m512 va;
                 va=_mm512_set1_ps(a[0]);c00=_mm512_fmadd_ps(va,b0,c00);c01=_mm512_fmadd_ps(va,b1,c01);
                 va=_mm512_set1_ps(a[1]);c10=_mm512_fmadd_ps(va,b0,c10);c11=_mm512_fmadd_ps(va,b1,c11);
                 va=_mm512_set1_ps(a[2]);c20=_mm512_fmadd_ps(va,b0,c20);c21=_mm512_fmadd_ps(va,b1,c21);
@@ -411,7 +421,7 @@ static void packed_fused_2d_worker(void* arg, int start, int end) {
         #define FP2(i,lo,hi) if(i<mr){ \
             __m512 vb=_mm512_set1_ps(g->bias[m+(i)]); \
             lo=_mm512_add_ps(lo,vb);hi=_mm512_add_ps(hi,vb); \
-            if(g->act==1){lo=_fused_silu512(lo);hi=_fused_silu512(hi);} \
+            lo=nn2_activate_vector(lo,g->act);hi=nn2_activate_vector(hi,g->act); \
             if(nr>=32){_mm512_storeu_ps(Cp+i*g->ldc,lo);_mm512_storeu_ps(Cp+i*g->ldc+16,hi);} \
             else{__mmask16 ml=(nr>=16)?0xFFFF:((__mmask16)1<<nr)-1,mh=(nr<=16)?0:((__mmask16)1<<(nr-16))-1; \
                 _mm512_mask_storeu_ps(Cp+i*g->ldc,ml,lo);if(mh)_mm512_mask_storeu_ps(Cp+i*g->ldc+16,mh,hi);}}
@@ -419,6 +429,8 @@ static void packed_fused_2d_worker(void* arg, int start, int end) {
         #undef FP2
     }
 }
+
+#endif /* __AVX512F__ */
 
 void nn2_sgemm_bias_act_packed(int M, int K, int N,
                                const float* Ap,
@@ -445,7 +457,7 @@ void nn2_sgemm_bias_act_packed(int M, int K, int N,
         nn2_tp_parallel_for(packed_fused_worker, &pg, n_tiles, grain);
     }
 #else
-    (void)Ap;(void)B;(void)C;(void)ldc;(void)bias;(void)act;(void)M;(void)K;(void)N;
+    nn2_sgemm_bias_act(M, K, N, Ap, K, B, N, C, ldc, bias, act);
 #endif
 }
 
@@ -455,9 +467,8 @@ void nn2_sgemm_bias_act(int M, int K, int N,
                         float* C, int ldc,
                         const float* bias, int act)
 {
-    (void)ldb;
 #ifdef __AVX512F__
-    GemmFusedCtx g = {M, K, N, A, lda, B, C, ldc, bias, act};
+    GemmFusedCtx g = {M, K, N, A, lda, B, ldb, C, ldc, bias, act};
     int n_tiles = (N + NR512 - 1) / NR512;
     int grain = (n_tiles > 128) ? n_tiles / (nn2_tp_num_threads() * 4) : 1;
     if (grain < 1) grain = 1;
@@ -473,6 +484,7 @@ void nn2_sgemm_bias_act(int M, int K, int N,
         for (int n = 0; n < N; n++) {
             float v = C[m*ldc+n] + b;
             if (act == 1) { float s = 1.0f/(1.0f+expf(-v)); v *= s; }
+            else if (act == 2) v = 1.0f / (1.0f + expf(-v));
             else if (act == 3 && v < 0) v *= 0.1f;
             C[m*ldc+n] = v;
         }
@@ -484,12 +496,12 @@ void nn2_sgemm_bias_act(int M, int K, int N,
 
 static void gemm_scalar(int M, int K, int N,
                         const float* A, int lda,
-                        const float* B, float* C, int ldc)
+                        const float* B, int ldb, float* C, int ldc)
 {
     for (int m=0;m<M;m++)
         for (int n=0;n<N;n++) {
             float acc=0;
-            for (int k=0;k<K;k++) acc+=A[m*lda+k]*B[k*N+n];
+            for (int k=0;k<K;k++) acc+=A[m*lda+k]*B[k*ldb+n];
             C[m*ldc+n]=acc;
         }
 }
@@ -501,11 +513,10 @@ void nn2_sgemm(int M, int K, int N,
                const float* B, int ldb,
                float* C, int ldc)
 {
-    (void)ldb;
 
 #ifdef __AVX512F__
     {
-        GemmCtx g = {M, K, N, A, lda, B, C, ldc};
+        GemmCtx g = {M, K, N, A, lda, B, ldb, C, ldc};
         int n_tiles = (N + NR512 - 1) / NR512;
         int grain = (n_tiles > 128) ? n_tiles / (nn2_tp_num_threads() * 4) : 1;
         if (grain < 1) grain = 1;
@@ -519,7 +530,7 @@ void nn2_sgemm(int M, int K, int N,
 
 #ifdef __AVX2__
     {
-        GemmCtx g = {M, K, N, A, lda, B, C, ldc};
+        GemmCtx g = {M, K, N, A, lda, B, ldb, C, ldc};
         int n_tiles = (N + NN2_NR - 1) / NN2_NR;
         int grain = (n_tiles > 256) ? n_tiles / (nn2_tp_num_threads() * 4) : 1;
         if (grain < 1) grain = 1;
@@ -531,5 +542,5 @@ void nn2_sgemm(int M, int K, int N,
     }
 #endif
 
-    gemm_scalar(M, K, N, A, lda, B, C, ldc);
+    gemm_scalar(M, K, N, A, lda, B, ldb, C, ldc);
 }

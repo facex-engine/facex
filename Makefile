@@ -49,6 +49,14 @@ facex-cli-fp32$(EXT): $(FP32_SRC) $(CLI_HEADERS)
 libfacex.so: $(addprefix src/,$(LIBOBJ:.o=.c)) $(CLI_HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -fPIC -Iinclude -o $@ $(addprefix src/,$(LIBOBJ:.o=.c)) $(LDFLAGS)
 
+# Rebuild the distributed detector from the native YuNet implementation.
+.PHONY: wasm-detector
+wasm-detector:
+	emcc -O3 -msimd128 -Iinclude src/detect.c -o wasm/detect.js \
+	    -sMODULARIZE=1 -sEXPORT_NAME=DetectModule -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 \
+	    -sEXPORTED_FUNCTIONS='["_detect_init","_detect_run","_detect_free","_detect_version","_malloc","_free"]' \
+	    -sEXPORTED_RUNTIME_METHODS='["FS","cwrap"]' -sENVIRONMENT=web,worker,node
+
 # Example program
 example: facex-example$(EXT)
 
@@ -62,11 +70,15 @@ facex-encrypt$(EXT): src/weight_crypto.c
 	$(CC) $(CFLAGS) -DWEIGHT_CRYPTO_MAIN -o $@ $< $(LDFLAGS)
 
 .PHONY: check
-check: kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT)
+check: nn2-gemm-test$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT)
+	./nn2-gemm-test$(EXT)
 	./kernel-test$(EXT)
 	./mfn-depthwise-test$(EXT)
 	./geometry-test$(EXT)
 	./motion-phase-test$(EXT)
+
+nn2-gemm-test$(EXT): tests/nn2_gemm.c nn2/src/gemm.c nn2/src/gemm_res.c nn2/src/pool.c nn2/src/gemm_vector.h nn2/src/fast_exp.h
+	$(CC) $(CFLAGS) -Inn2/include -Inn2/src -o $@ $(filter %.c,$^) $(LDFLAGS)
 
 motion-phase-test$(EXT): tests/motion_phase.c nn2/src/motion_gate.c nn2/src/nn2_internal.h nn2/include/nn2.h
 	$(CC) $(CFLAGS) -Inn2/src -Inn2/include -o $@ tests/motion_phase.c nn2/src/motion_gate.c
@@ -116,4 +128,4 @@ libdetect.a: detect.o
 	$(AR) rcs $@ $^
 
 clean:
-	rm -f libfacex.so libfacex.a libdetect.a facex-cli$(EXT) facex-cli-fp32$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT) *.o $(LIBOBJ:.o=.d)
+	rm -f libfacex.so libfacex.a libdetect.a facex-cli$(EXT) facex-cli-fp32$(EXT) facex-example$(EXT) facex-encrypt$(EXT) golden-test$(EXT) facex-v2$(EXT) facex-mfn$(EXT) kernel-test$(EXT) mfn-depthwise-test$(EXT) geometry-test$(EXT) motion-phase-test$(EXT) nn2-gemm-test$(EXT) example_mfn$(EXT) *.o $(LIBOBJ:.o=.d)

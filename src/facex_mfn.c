@@ -13,6 +13,7 @@
 
 #include "../include/facex_mfn.h"
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -62,8 +63,9 @@ struct MfnEngine {
     int n_blocks;
     MfnConv final_conv, gdconv, embed_proj;
 
-    /* Raw file buffer — all weight pointers index into freed memory below. */
+    /* Model storage and folded biases are owned by the handle. */
     uint8_t *raw;
+    float *bias_slab;
     size_t raw_size;
 
     /* Workspace: two ping-pong NCHW buffers + a "residual save" slot. */
@@ -96,19 +98,25 @@ static int parse_header(const uint8_t *raw, size_t raw_size,
     out->gdc_kernel     = hdr[12];
 
     if (out->n_stages > MFN_MAX_STAGES) return -5;
+    if (!out->stem_channels || !out->block_channels || !out->embedding_dim ||
+        !out->final_channels || !out->stem_kernel || !out->stem_stride || !out->gdc_kernel) return -5;
+    int blocks = 0;
     for (int i = 0; i < out->n_stages; i++) {
         const uint8_t *p = hdr + HDR_FIXED_SIZE + i * STAGE_REC_SIZE;
         out->stage_t[i] = p[0];
         out->stage_n[i] = p[1];
         out->stage_s[i] = p[2];
+        blocks += p[1];
+        if (!p[0] || !p[1] || !p[2] || blocks > MFN_MAX_BLOCKS) return -5;
     }
 
     /* Skip JSON debug header */
     size_t off = 8 + ARCH_HDR_SIZE;
     uint32_t json_len = *(const uint32_t*)(raw + off); off += 4;
+    if (json_len > raw_size - off - 4) return -6;
     off += json_len;
     if (off + 4 > raw_size) return -6;
-    *out_n_tensors = *(const uint32_t*)(raw + off); off += 4;
+    memcpy(out_n_tensors, raw + off, 4); off += 4;
     *out_payload_off = off;
     return 0;
 }
@@ -117,29 +125,22 @@ static int parse_header(const uint8_t *raw, size_t raw_size,
 /* ============ Tensor table from .bin ============ */
 
 typedef struct {
-    float **tensors;
-    int n;
-} TensorTable;
+    uint8_t *next, *end;
+    uint32_t remaining;
+} TensorCursor;
 
-static int build_tensor_table(const uint8_t *raw, size_t raw_size,
-                               size_t payload_off, int n_expected,
-                               TensorTable *out)
-{
-    out->tensors = (float**)calloc(n_expected, sizeof(float*));
-    out->n = n_expected;
-    size_t off = payload_off;
-    for (int i = 0; i < n_expected; i++) {
-        if (off + 4 > raw_size) return -1;
-        uint32_t sz = *(const uint32_t*)(raw + off); off += 4;
-        if (off + sz > raw_size) return -1;
-        /* Note: pointer indexes into raw buffer — alignment may not be
-         * 4-byte. On x86 this is fine; would need a copy on strict-align. */
-        out->tensors[i] = (float*)(raw + off);
-        off += sz;
-    }
-    return 0;
+static float *take_tensor(TensorCursor *cursor, size_t count) {
+    uint32_t bytes;
+    if (!cursor->remaining || cursor->end - cursor->next < 4) return NULL;
+    memcpy(&bytes, cursor->next, 4);
+    cursor->next += 4;
+    if (bytes % sizeof(float) || bytes / sizeof(float) != count ||
+        bytes > (size_t)(cursor->end - cursor->next)) return NULL;
+    float *data = (float *)cursor->next;
+    cursor->next += bytes;
+    cursor->remaining--;
+    return data;
 }
-
 
 /* ============ Fold BatchNorm into preceding convolution ============
  *
@@ -174,20 +175,20 @@ static void fold_bn(float *w, int c_out, int weights_per_filter,
  * fold BN, and stash pointers into the MfnConv struct.
  */
 
-static void load_conv(MfnConv *c, int c_in, int c_out, int k, int stride,
+static int load_conv(MfnConv *c, int c_in, int c_out, int k, int stride,
                        int padding, int groups, int with_act,
-                       float **tensors, int *idx,
+                       TensorCursor *cursor,
                        float *bias_storage, /* pre-allocated [c_out] */
                        float eps)
 {
-    float *w        = tensors[(*idx)++];
-    float *bn_w     = tensors[(*idx)++];
-    float *bn_b     = tensors[(*idx)++];
-    float *bn_mean  = tensors[(*idx)++];
-    float *bn_var   = tensors[(*idx)++];
-    float *prelu    = with_act ? tensors[(*idx)++] : NULL;
-
-    int weights_per_filter = (c_in / groups) * k * k;
+    size_t per_channel = (size_t)(c_in / groups) * k * k;
+    if (per_channel > INT_MAX / (size_t)c_out) return 0;
+    int weights_per_filter = (int)per_channel;
+    float *w = take_tensor(cursor, per_channel * c_out);
+    float *bn_w = take_tensor(cursor, c_out), *bn_b = take_tensor(cursor, c_out);
+    float *bn_mean = take_tensor(cursor, c_out), *bn_var = take_tensor(cursor, c_out);
+    float *prelu = with_act ? take_tensor(cursor, c_out) : NULL;
+    if (!w || !bn_w || !bn_b || !bn_mean || !bn_var || (with_act && !prelu)) return 0;
     fold_bn(w, c_out, weights_per_filter, bn_w, bn_b, bn_mean, bn_var,
             bias_storage, eps);
 
@@ -200,6 +201,7 @@ static void load_conv(MfnConv *c, int c_in, int c_out, int k, int stride,
     c->stride = stride;
     c->padding = padding;
     c->groups = groups;
+    return 1;
 }
 
 
@@ -211,15 +213,16 @@ static int conv_hout(const MfnConv *c, int Hin)
 
 /* ============ Public init ============ */
 
-int mfn_engine_init(const char *path, MfnEngine *e)
+static int mfn_load(const char *path, MfnEngine *e)
 {
     memset(e, 0, sizeof(*e));
 
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
-    fseek(f, 0, SEEK_END);
-    e->raw_size = (size_t)ftell(f);
-    fseek(f, 0, SEEK_SET);
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
+    long length = ftell(f);
+    if (length <= 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return -1; }
+    e->raw_size = (size_t)length;
     e->raw = (uint8_t*)malloc(e->raw_size);
     if (!e->raw) { fclose(f); return -2; }
     if (fread(e->raw, 1, e->raw_size, f) != e->raw_size) { fclose(f); return -3; }
@@ -230,23 +233,14 @@ int mfn_engine_init(const char *path, MfnEngine *e)
     int rc = parse_header(e->raw, e->raw_size, &e->arch, &payload_off, &n);
     if (rc != 0) return -10 + rc;
 
-    TensorTable tt = {0};
-    if (build_tensor_table(e->raw, e->raw_size, payload_off, (int)n, &tt) != 0)
-        return -20;
-
+    size_t payload_size = e->raw_size - payload_off;
+    size_t aligned = payload_off & ~(size_t)3;
+    if (aligned != payload_off) memmove(e->raw + aligned, e->raw + payload_off, payload_size);
+    TensorCursor cursor = {e->raw + aligned, e->raw + aligned + payload_size, n};
     const float eps = 1e-5f;
-    int idx = 0;
-
-    /* Pre-allocate one bias buffer per conv (BN-folded biases need new
-     * storage since the original .bin has no bias slot for these convs). */
-    /* Count convs first so we can allocate one big bias slab. */
-    int n_convs = 2; /* stem, dw_stem */
-    for (int i = 0; i < e->arch.n_stages; i++)
-        n_convs += e->arch.stage_n[i] * 3;  /* expand, dw, project */
-    n_convs += 3; /* final_conv, gdconv, embed_proj */
 
     /* Per-conv bias is sized by Cout; pre-compute total Cout sum. */
-    int total_cout = 0;
+    size_t total_cout = 0;
     {
         int c_in = e->arch.stem_channels;
         total_cout += e->arch.stem_channels;     /* stem */
@@ -269,21 +263,22 @@ int mfn_engine_init(const char *path, MfnEngine *e)
         total_cout += e->arch.embedding_dim;      /* embed_proj */
     }
 
-    float *bias_slab = (float*)calloc((size_t)total_cout, sizeof(float));
-    if (!bias_slab) return -30;
-    float *bp = bias_slab;
+    if (total_cout > payload_size / sizeof(float)) return -20;
+    e->bias_slab = calloc(total_cout, sizeof(float));
+    if (!e->bias_slab) return -30;
+    float *bp = e->bias_slab;
 
     /* stem: Conv3 s=2 + BN + PReLU */
-    load_conv(&e->stem, 3, e->arch.stem_channels,
+    if (!load_conv(&e->stem, 3, e->arch.stem_channels,
               e->arch.stem_kernel, e->arch.stem_stride,
               e->arch.stem_kernel / 2, 1, /*with_act*/1,
-              tt.tensors, &idx, bp, eps);
+              &cursor, bp, eps)) return -20;
     bp += e->stem.c_out;
 
     /* dw_stem: DW Conv3 s=1 + BN + PReLU */
-    load_conv(&e->dw_stem, e->arch.stem_channels, e->arch.stem_channels,
+    if (!load_conv(&e->dw_stem, e->arch.stem_channels, e->arch.stem_channels,
               3, 1, 1, e->arch.stem_channels, /*with_act*/1,
-              tt.tensors, &idx, bp, eps);
+              &cursor, bp, eps)) return -20;
     bp += e->dw_stem.c_out;
 
     /* bottleneck stages */
@@ -300,18 +295,18 @@ int mfn_engine_init(const char *path, MfnEngine *e)
             int hidden = ci * t;
 
             /* 1x1 expand + BN + PReLU */
-            load_conv(&blk->expand, ci, hidden, 1, 1, 0, 1, 1,
-                      tt.tensors, &idx, bp, eps);
+            if (!load_conv(&blk->expand, ci, hidden, 1, 1, 0, 1, 1,
+                      &cursor, bp, eps)) return -20;
             bp += blk->expand.c_out;
 
             /* DW 3x3 + BN + PReLU */
-            load_conv(&blk->dw, hidden, hidden, 3, stride, 1, hidden, 1,
-                      tt.tensors, &idx, bp, eps);
+            if (!load_conv(&blk->dw, hidden, hidden, 3, stride, 1, hidden, 1,
+                      &cursor, bp, eps)) return -20;
             bp += blk->dw.c_out;
 
             /* 1x1 project + BN (no activation — linear bottleneck) */
-            load_conv(&blk->project, hidden, c_out_stage, 1, 1, 0, 1, 0,
-                      tt.tensors, &idx, bp, eps);
+            if (!load_conv(&blk->project, hidden, c_out_stage, 1, 1, 0, 1, 0,
+                      &cursor, bp, eps)) return -20;
             bp += blk->project.c_out;
 
             blk->has_residual = (stride == 1 && ci == c_out_stage) ? 1 : 0;
@@ -320,43 +315,22 @@ int mfn_engine_init(const char *path, MfnEngine *e)
     }
 
     /* final_conv: 1x1 + BN + PReLU */
-    load_conv(&e->final_conv, c_in, e->arch.final_channels, 1, 1, 0, 1, 1,
-              tt.tensors, &idx, bp, eps);
+    if (!load_conv(&e->final_conv, c_in, e->arch.final_channels, 1, 1, 0, 1, 1,
+              &cursor, bp, eps)) return -20;
     bp += e->final_conv.c_out;
 
     /* gdconv: DW kxk no padding + BN, no act */
-    load_conv(&e->gdconv, e->arch.final_channels, e->arch.final_channels,
+    if (!load_conv(&e->gdconv, e->arch.final_channels, e->arch.final_channels,
               e->arch.gdc_kernel, 1, 0, e->arch.final_channels, 0,
-              tt.tensors, &idx, bp, eps);
+              &cursor, bp, eps)) return -20;
     bp += e->gdconv.c_out;
 
     /* embed_proj: 1x1 + BN, no act */
-    load_conv(&e->embed_proj, e->arch.final_channels, e->arch.embedding_dim,
+    if (!load_conv(&e->embed_proj, e->arch.final_channels, e->arch.embedding_dim,
               1, 1, 0, 1, 0,
-              tt.tensors, &idx, bp, eps);
+              &cursor, bp, eps)) return -20;
 
-    if (idx != tt.n) {
-        fprintf(stderr, "MFN: consumed %d tensors but file has %d\n", idx, tt.n);
-        free(tt.tensors);
-        free(bias_slab);
-        return -40;
-    }
-    free(tt.tensors);
-
-    /* Stash bias slab in raw_size+something? Actually we point at it from
-     * each MfnConv.b. We need to remember to free it on engine_free.
-     * Track it by hijacking work_a as the bias slab "owner"? No — add
-     * a separate field. */
-    /* Use the existing raw[] field for raw, and add a dedicated owner. */
-    /* (Simplest: keep the bias_slab pointer in stem.b being the start —
-     *  we'll free starting from bias_slab.) For that we need to remember
-     *  where it starts. Save in a new field. */
-    /* Workaround: stash in residual_buf temporarily; we'll allocate real
-     * residual_buf below and free this slab on engine_free. To avoid
-     * confusing the alias, expose via a private field. */
-    /* Cleaner: add to struct. We did not — for now, the bias_slab leaks at
-     * engine_free time. */
-    /* TODO: leak fixed below by storing in residual_buf trick — see free path. */
+    if (cursor.remaining || cursor.next != cursor.end) return -40;
 
     /* Allocate workspace: large enough for the biggest intermediate tensor.
      * After stem (s=2): 56*56*stem_c
@@ -413,13 +387,6 @@ int mfn_engine_init(const char *path, MfnEngine *e)
     e->residual_buf = (float*)malloc(e->work_floats * sizeof(float));
     if (!e->work_a || !e->work_b || !e->residual_buf) return -50;
 
-    /* Smuggle bias_slab so engine_free can release it. We tack it onto
-     * the work allocation by placing the slab pointer just before
-     * residual_buf — but cleaner: leave it as a small leak documented
-     * in TODO. */
-    /* Actually free path: bias_slab is referenced by stem.b. Track it. */
-    /* Store its head in stem.b — but stem.b is already that. So just call
-     * free(e->stem.b - 0) at free time, since stem is the first conv. */
     return 0;
 }
 
@@ -829,9 +796,7 @@ float mfn_similarity(const float *a, const float *b, int dim) {
 
 void mfn_engine_free(MfnEngine *e) {
     if (!e) return;
-    /* All BN-folded biases live in a contiguous slab whose head is
-     * e->stem.b (first conv loaded). */
-    if (e->stem.b) free(e->stem.b);
+    free(e->bias_slab);
     free(e->raw);
     free(e->work_a);
     free(e->work_b);
@@ -839,6 +804,27 @@ void mfn_engine_free(MfnEngine *e) {
     memset(e, 0, sizeof(*e));
 }
 
+
+int mfn_engine_init(const char *path, MfnEngine *e) {
+    if (!path || !e) return -1;
+    int rc = mfn_load(path, e);
+    if (rc != 0) mfn_engine_free(e);
+    return rc;
+}
+
+MfnEngine *mfn_open(const char *path) {
+    MfnEngine *e = calloc(1, sizeof(*e));
+    if (e && mfn_engine_init(path, e) != 0) {
+        free(e);
+        return NULL;
+    }
+    return e;
+}
+
+void mfn_close(MfnEngine *e) {
+    mfn_engine_free(e);
+    free(e);
+}
 
 /* ============ Optional standalone CLI ============ */
 #ifdef MFN_STANDALONE
