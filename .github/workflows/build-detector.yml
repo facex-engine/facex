@@ -1,75 +1,50 @@
-name: Compare native inference before and after review
+name: Check the packaged FaceX REST service
 on:
   push:
     branches: [verify/sdk-detector-build]
 permissions:
   contents: read
 jobs:
-  compare:
+  rest:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 5f10ce0b4ec2d92e1cc96400b64e21eb9202ebb7
-          path: baseline
-      - uses: actions/checkout@v4
-        with:
-          ref: 79aa9093f3a5dae66f288804702d24dcd4c51571
-          path: revised
+          ref: 0f57a63c1bafd2d0c07a1710c89b9331a23d3b20
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build both revisions using identical flags
+      - name: Call the packaged API with both released weights
         run: |
-          python -m pip install numpy==2.3.5 Pillow==12.0.0
-          for dir in baseline revised; do
-            make -C "$dir" -j2 cli cli-fp32 CFLAGS="-O3 -march=native -funroll-loops"
-            (cd "$dir" && cc -O3 -march=native -funroll-loops -shared -fPIC -Iinclude src/facex.c src/transformer_ops.c src/gemm_int8_4x8c8.c src/threadpool.c src/detect.c src/align.c src/weight_crypto.c -lm -lpthread -o libfacex.so)
-          done
-          (cd revised && bash download_weights.sh)
-      - name: Compare every component on 135 crops in both modes
-        env:
-          PYTHONPATH: revised/tests:revised/python
-          OPENBLAS_NUM_THREADS: '1'
-        run: |
-          python - <<'PY'
-          import hashlib
-          from pathlib import Path
-          from bench_gallery_groups import fixture_patches, embed_patches
-          patches = fixture_patches()
-          weights = Path("revised/data/edgeface_xs_fp32.bin").resolve()
-          for name in ("facex-cli", "facex-cli-fp32"):
-              old, new = [embed_patches(weights, patches, Path(d, name).resolve()) for d in ("baseline", "revised")]
-              assert new.shape == old.shape == (15, 9, 512)
-              assert old.tobytes() == new.tobytes(), name
-              print(f"{name}: 135 byte-identical embeddings, SHA256 {hashlib.sha256(new.tobytes()).hexdigest()}")
-          PY
-      - name: Measure anonymous RSS with eight live engines
-        run: |
-          for dir in baseline revised baseline revised baseline revised; do
-            python - "$dir" <<'PY'
-          import ctypes as c
-          from pathlib import Path
+          bash download_weights.sh
+          python -m pip install numpy Pillow onnx==1.18.0
+          curl -fsSL --retry 2 https://media.githubusercontent.com/media/opencv/opencv_zoo/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx -o data/yunet.onnx
+          echo '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4  data/yunet.onnx' | sha256sum --check
+          python tools/export_yunet_weights.py data/yunet.onnx weights/yunet_fp32.bin
+          docker build -t facex-local .
+          docker run -d --rm --name facex-ci -p 127.0.0.1:8080:8080 -v "$PWD/data/edgeface_xs_fp32.bin:/app/weights/edgeface_xs_fp32.bin:ro" -v "$PWD/weights/yunet_fp32.bin:/app/weights/yunet_fp32.bin:ro" facex-local
+          trap 'docker logs facex-ci; docker stop facex-ci >/dev/null' EXIT
+          curl -fsS --retry 12 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/health
+          curl -fsS -F file=@data/test_face.jpg http://127.0.0.1:8080/embed -o "$RUNNER_TEMP/embed.json"
+          curl -fsS -F file=@data/test_face.jpg 'http://127.0.0.1:8080/detect?embedding_format=base64_f32le' -o "$RUNNER_TEMP/detect.json"
+          python - "$RUNNER_TEMP" <<'PY'
+          import base64
+          import json
+          import math
           import sys
-          def rss_kib():
-              return int(next(l for l in Path("/proc/self/status").read_text().splitlines() if l.startswith("RssAnon:")).split()[1])
-          lib = c.CDLL(str(Path(sys.argv[1], "libfacex.so").resolve()))
-          lib.facex_init.argtypes, lib.facex_init.restype = [c.c_char_p] * 3, c.c_void_p
-          ptr = c.POINTER(c.c_float)
-          lib.facex_embed.argtypes, lib.facex_embed.restype = [c.c_void_p, ptr, ptr], c.c_int
-          lib.facex_free.argtypes, lib.facex_free.restype = [c.c_void_p], None
-          weights = bytes(Path("revised/data/edgeface_xs_fp32.bin").resolve())
-          source = (c.c_float * (112 * 112 * 3))(*[((i % 253) - 126) / 127.5 for i in range(112 * 112 * 3)])
-          output = (c.c_float * 512)()
-          start = rss_kib()
-          handles = []
-          for i in range(8):
-              handle = lib.facex_init(weights, None, None)
-              assert handle and lib.facex_embed(handle, source, output) == 0
-              handles.append(handle)
-          print(f"{sys.argv[1]}: eight warmed handles, RSS delta {rss_kib() - start} KiB")
-          for handle in handles:
-              lib.facex_free(handle)
+          import urllib.request
+          from pathlib import Path
+          folder = Path(sys.argv[1])
+          embedding = json.loads((folder / "embed.json").read_text())["embedding"]
+          assert len(embedding) == 512 and all(math.isfinite(x) for x in embedding)
+          faces = json.loads((folder / "detect.json").read_text())["faces"]
+          assert faces and len(base64.b64decode(faces[0]["embedding"])) == 2048
+          data = json.dumps({"emb1": faces[0]["embedding"], "emb2": faces[0]["embedding"]}).encode()
+          req = urllib.request.Request("http://127.0.0.1:8080/compare", data=data, headers={"Content-Type":"application/json"})
+          reply = json.load(urllib.request.urlopen(req))
+          assert reply["match"] and reply["similarity"] == 1
+          print(f"REST: {len(faces)} detected, 512 components, self similarity 1")
           PY
-          done
