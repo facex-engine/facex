@@ -1,11 +1,14 @@
 package facex
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"math"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"sort"
 	"testing"
 	"time"
@@ -94,6 +97,27 @@ func TestIdentityGalleryScale(t *testing.T) {
 		queries[i+people] = basis(i)
 		queries[i+people][(i+1)%people] = 1
 		queries[i+2*people] = basis(200+i)
+	}
+	if dir := os.Getenv("FACEX_GALLERY_FIXTURE"); dir != "" {
+		readRows := func(name string, vectors [][]float32) {
+			f, err := os.Open(filepath.Join(dir, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			stat, err := f.Stat()
+			if err != nil || stat.Size() != int64(len(vectors)*OutputSize*4) {
+				t.Fatalf("incorrect fixture size for %s: %v", name, err)
+			}
+			reader := bufio.NewReaderSize(f, 1<<20)
+			for _, row := range vectors {
+				if err := binary.Read(reader, binary.LittleEndian, row); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		readRows("rows", rows)
+		readRows("queries", queries)
 	}
 	g, err := NewIdentityGallery(rows, ids)
 	if err != nil {

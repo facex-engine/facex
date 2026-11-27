@@ -28,3 +28,34 @@ jobs:
         env:
           FACEX_GALLERY_SCALE: '1'
         run: go test -v -run '^TestIdentityGalleryScale$' -count=1 ./...
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare model fixture and verify Go decisions
+        working-directory: .
+        env:
+          OPENBLAS_NUM_THREADS: '1'
+          FACEX_GALLERY_SCALE: '1'
+          FACEX_GALLERY_FIXTURE: ${{ runner.temp }}/gallery
+        run: |
+          make cli
+          weights="$RUNNER_TEMP/edgeface_xs_fp32.bin"
+          curl --fail --silent --show-error --location --retry 2 https://github.com/facex-engine/facex/releases/download/v1.0.0/edgeface_xs_fp32.bin -o "$weights"
+          echo "d23f7b3cf8bcda5e451b48cf012e7dc6c4963d5703fafb8893f956d0203691d8  $weights" | sha256sum --check
+          python -m pip install numpy==2.3.5 Pillow==12.0.0
+          PYTHONPATH=tests:python python - "$weights" <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+          import numpy as np
+          from bench_gallery_groups import fixture_views, prepare
+
+          output = Path(os.environ["FACEX_GALLERY_FIXTURE"])
+          output.mkdir()
+          prepare(output, fixture_views(Path(sys.argv[1])), scaled=True)
+          near_and_boundary = np.load(output / "queries.npy")
+          random = np.random.default_rng(77).standard_normal((15, 512))
+          np.vstack((near_and_boundary, random)).astype("<f4").tofile(output / "queries")
+          PY
+          cd go/facex
+          go test -v -run '^TestIdentityGalleryScale$' -count=1 ./...
