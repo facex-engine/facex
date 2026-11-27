@@ -1,6 +1,6 @@
-# FaceX FRVT 1:1 submission
+# FaceX adapter for FRTE 1:1 verification
 
-Submission package for NIST [FRTE 1:1 Verification](https://pages.nist.gov/frvt/html/frvt11.html).
+Build and packaging instructions for the FaceX adapter to the NIST [FRTE 1:1 Verification](https://pages.nist.gov/frvt/html/frvt11.html).
 
 ## Architecture
 
@@ -64,11 +64,11 @@ facex_001/
     └── libonnxruntime.so.1.21.0
 ```
 
-Build the package:
+Set `MODEL_DIR` to the directory containing the three required ONNX models, then build the package:
 
 ```bash
 mkdir -p facex_001/doc facex_001/config facex_001/lib
-cp ../_unencrypted_backup/facex_{detect,landmark,xs}.onnx facex_001/config/
+cp "$MODEL_DIR"/facex_{detect,landmark,xs}.onnx facex_001/config/
 cp build/lib/libfrvt_11_facex_001.so       facex_001/lib/
 cp build/lib/libonnxruntime.so.*           facex_001/lib/
 cat > facex_001/doc/ReleaseNotes.txt <<EOF
@@ -130,19 +130,6 @@ put facex_001.tar.gz.sig
 4. **Resubmissions** allowed every 4 months. Increment the sequence
    number (`002`, `003`, ...) and rebuild.
 
-## Expected outcome
+## Evaluation status
 
-We submit `xs` (2.07 M params, 99.07% LFW after YuNet 5-pt alignment).
-Realistic position in the table:
-
-| Metric | Expected rank |
-|--------|--------------|
-| FNMR @ FMR=10⁻⁶ (accuracy) | ~top 80-120 of 250+ |
-| Template gen time | top 5-15 (we're CPU-fast) |
-| Match time | top 10 (cosine is trivial) |
-| Template size | 2053 bytes (typical) |
-
-The marketing claim that survives scrutiny:
-**"Fastest open-source CPU face recognition tested by NIST FRVT 2026"**
-— assuming we land top-3 on `Template gen time`, which is very likely
-given our hand-tuned AVX-512 GEMM stack.
+This adapter expects the XS model with 512 output components. The downloadable Nano artifact has 256 outputs and requires a different template contract. The repository contains preparation and local validation instructions. A ranking, FNMR at a specified FMR, or a claim of NIST testing requires a published result identifying the submission. Historical LFW figures are listed in the [model guide](../README.md#models-and-measurements).

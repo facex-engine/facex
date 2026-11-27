@@ -8,6 +8,7 @@ on:
       - 'include/**'
       - 'tests/**'
       - 'nn2/**'
+      - 'frvt/src/**'
       - 'docker/**'
       - 'python/**'
       - 'wasm/**'
@@ -93,6 +94,9 @@ jobs:
         run: |
           make -j2 all cli-fp32 libfacex.so mfn-cli mfn-example check
           make -C nn2 -j2
+          cc -O2 -Iinclude tests/bench_profile.c libfacex.a -lm -lpthread -o "$RUNNER_TEMP/bench-profile"
+          c++ -O2 -std=c++11 tests/frvt_alignment.cpp -o "$RUNNER_TEMP/frvt-alignment"
+          "$RUNNER_TEMP/frvt-alignment"
           for flags in "-march=x86-64" "-march=x86-64-v3"; do
             make -B nn2-gemm-test CFLAGS="-O2 $flags"
             ./nn2-gemm-test

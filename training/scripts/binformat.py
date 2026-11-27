@@ -4,13 +4,13 @@ FaceX MobileFaceNet .bin v3 format — parametric, self-describing.
 File layout (little-endian):
     magic        : 4 bytes  = b"EFM3"  (EdgeFaceX MFN v3)
     version      : u32      = 3
-    binary header: BIN_HDR_SIZE bytes
+    binary header: ARCH_HDR_SIZE bytes
     json_len     : u32      (debug copy of arch as JSON)
     json         : json_len bytes
     n_tensors    : u32
     tensor records: per-tensor [u32 size][raw FP32 bytes]
 
-Binary header schema (fixed 32 bytes):
+Binary header schema (16 fixed bytes followed by eight 8-byte stage records):
     u8  hdr_version (=1)
     u8  n_stages              (number of bottleneck stages)
     u8  stem_kernel

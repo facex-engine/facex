@@ -35,7 +35,7 @@ for face in faces:
 # Compare two faces
 if len(faces) >= 2:
     sim = FaceX.similarity(faces[0]["embedding"], faces[1]["embedding"])
-    print(f"Similarity: {sim:.3f}  ({'same' if sim > 0.3 else 'different'} person)")
+    print(f"Cosine similarity: {sim:.3f}")
 ```
 
 ## Rectangular YuNet input

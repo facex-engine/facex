@@ -61,7 +61,7 @@ wasm-detector:
 example: facex-example$(EXT)
 
 facex-example$(EXT): examples/example.c libfacex.a
-	$(CC) $(CFLAGS) -Iinclude -o $@ $< -L. -lfacex $(LDFLAGS)
+	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
 
 # Encryption tool
 encrypt: facex-encrypt$(EXT)
@@ -98,7 +98,7 @@ test: check golden-test$(EXT)
 	@./golden-test$(EXT) data/edgeface_xs_fp32.bin
 
 golden-test$(EXT): tests/golden_test.c libfacex.a
-	$(CC) $(CFLAGS) -Iinclude -o $@ $< -L. -lfacex $(LDFLAGS)
+	$(CC) $(CFLAGS) -Iinclude -o $@ $^ $(LDFLAGS)
 
 # Parametric v2 engine (loads EFX2 .bin, supports nano/tiny/standard/xs)
 v2-cli: facex-v2$(EXT)

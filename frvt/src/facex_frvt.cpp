@@ -6,8 +6,8 @@
  *   facex_landmark.onnx   — 98-point WFLW landmarks (112x112 RGB)
  *   facex_xs.onnx         — 512-dim recognition embedding (112x112 RGB, L2 normalized)
  *
- * Each template is a fixed-size 512 × 4 = 2048-byte L2-normalized float32 vector.
- * Match = cosine similarity rescaled to [0, 1].
+ * Each template is a 5-byte header plus 512 normalized float32 values (2053 bytes).
+ * Match = cosine similarity rescaled to [0, 1000].
  *
  * Build for Linux x86_64 (NIST evaluation platform):
  *   cmake -S . -B build -DONNXRUNTIME_ROOT=/path/to/onnxruntime
@@ -15,6 +15,7 @@
  *   -> libfrvt_11_facex_001.so
  */
 
+#include "alignment.hpp"
 #include "frvt11.h"
 #include "frvt_structs.h"
 
@@ -54,78 +55,6 @@ constexpr int DET_SIZE = 320;
 constexpr int LM_SIZE  = 112;
 constexpr int REC_SIZE = 112;
 constexpr int EMB_DIM  = 512;
-
-// ===== Similarity transform (rotation + uniform scale + translation) =====
-// Umeyama algorithm minimizing sum of squared errors between two point sets.
-// Inputs: src[5][2] (detected) and dst[5][2] (template). Output: 2x3 affine M.
-static void umeyama_5pt(const float src[5][2], const float dst[5][2], float M[6])
-{
-    float src_cx = 0, src_cy = 0, dst_cx = 0, dst_cy = 0;
-    for (int i = 0; i < 5; i++) {
-        src_cx += src[i][0]; src_cy += src[i][1];
-        dst_cx += dst[i][0]; dst_cy += dst[i][1];
-    }
-    src_cx /= 5; src_cy /= 5; dst_cx /= 5; dst_cy /= 5;
-    float a = 0, b = 0, c = 0;
-    for (int i = 0; i < 5; i++) {
-        float sx = src[i][0] - src_cx, sy = src[i][1] - src_cy;
-        float dx = dst[i][0] - dst_cx, dy = dst[i][1] - dst_cy;
-        a += sx*dx + sy*dy;
-        b += sx*dy - sy*dx;
-        c += sx*sx + sy*sy;
-    }
-    float scale = std::hypot(a, b) / std::max(c, 1e-6f);
-    float cos_t = a / std::hypot(a, b);
-    float sin_t = b / std::hypot(a, b);
-    M[0] = scale * cos_t;   M[1] = -scale * sin_t;
-    M[3] = scale * sin_t;   M[4] =  scale * cos_t;
-    M[2] = dst_cx - M[0] * src_cx - M[1] * src_cy;
-    M[5] = dst_cy - M[3] * src_cx - M[4] * src_cy;
-}
-
-// Warp 24-bit RGB image into a dst×dst RGB plane using inverse affine + bilinear.
-// We compute the inverse of the 2x3 forward map, then for each dst pixel sample src.
-static void warp_affine_bilinear(
-    const uint8_t* src, int sw, int sh, int sd,
-    uint8_t* dst, int dst_size, const float fwd[6])
-{
-    float det = fwd[0] * fwd[4] - fwd[1] * fwd[3];
-    if (std::fabs(det) < 1e-9f) det = 1e-9f;
-    float inv[6];
-    inv[0] =  fwd[4] / det; inv[1] = -fwd[1] / det;
-    inv[3] = -fwd[3] / det; inv[4] =  fwd[0] / det;
-    inv[2] = -(inv[0] * fwd[2] + inv[1] * fwd[5]);
-    inv[5] = -(inv[3] * fwd[2] + inv[4] * fwd[5]);
-
-    int channels = (sd == 24) ? 3 : 1;
-    for (int y = 0; y < dst_size; y++) {
-        for (int x = 0; x < dst_size; x++) {
-            float fx = inv[0] * x + inv[1] * y + inv[2];
-            float fy = inv[3] * x + inv[4] * y + inv[5];
-            int x0 = static_cast<int>(std::floor(fx));
-            int y0 = static_cast<int>(std::floor(fy));
-            int x1 = x0 + 1, y1 = y0 + 1;
-            float wx = fx - x0, wy = fy - y0;
-            uint8_t* dp = dst + (y * dst_size + x) * 3;
-            if (x0 < 0 || x1 >= sw || y0 < 0 || y1 >= sh) {
-                dp[0] = dp[1] = dp[2] = 0;
-                continue;
-            }
-            const uint8_t* p00 = src + (y0 * sw + x0) * channels;
-            const uint8_t* p01 = src + (y0 * sw + x1) * channels;
-            const uint8_t* p10 = src + (y1 * sw + x0) * channels;
-            const uint8_t* p11 = src + (y1 * sw + x1) * channels;
-            for (int c = 0; c < 3; c++) {
-                int sc = (channels == 3) ? c : 0;
-                float v = (1 - wx) * (1 - wy) * p00[sc]
-                        + wx       * (1 - wy) * p01[sc]
-                        + (1 - wx) * wy       * p10[sc]
-                        + wx       * wy       * p11[sc];
-                dp[c] = static_cast<uint8_t>(std::min(255.0f, std::max(0.0f, v + 0.5f)));
-            }
-        }
-    }
-}
 
 // Convert HWC RGB uint8 → CHW float32 normalized (val - 127.5) / 128.
 static void hwc_to_chw_norm(const uint8_t* src, int size, float* dst)
@@ -333,9 +262,9 @@ public:
     bool extract_embedding(const Image& img, const float kps[5][2], float emb[EMB_DIM]) const
     {
         float M[6];
-        umeyama_5pt(kps, ARC_TEMPLATE, M);
+        if (!facex_frvt::umeyama_5pt(kps, ARC_TEMPLATE, M)) return false;
         std::vector<uint8_t> aligned(REC_SIZE * REC_SIZE * 3);
-        warp_affine_bilinear(img.data.get(), img.width, img.height, img.depth,
+        facex_frvt::warp_affine_bilinear(img.data.get(), img.width, img.height, img.depth,
                               aligned.data(), REC_SIZE, M);
         std::vector<float> recInput(3 * REC_SIZE * REC_SIZE);
         hwc_to_chw_norm(aligned.data(), REC_SIZE, recInput.data());

@@ -50,11 +50,11 @@ type Config struct {
 type FaceX struct {
 	inputBuf  []byte
 	outputBuf [OutputBytes]byte
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	mu     sync.Mutex
-	closed bool
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	mu        sync.Mutex
+	closed    bool
 }
 
 // defaultExe returns the right binary name for the current OS.

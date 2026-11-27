@@ -85,7 +85,35 @@ static int load_weights(const char* path, Weights* w, const char* license_key) {
     if (size < 8 || memcmp(payload, "EFXS", 4) != 0) return -1;
     uint32_t n;
     memcpy(&n, payload + 4, sizeof(n));
-    if (n < 286 || n > (size-8)/4 || n > INT_MAX) return -1;
+    /* Float counts for the tensors read by the fixed EdgeFace XS graph. */
+    static const uint32_t required[] = {
+        1536, 32, 32, 32, 288, 32, 32, 32, 608, 2432, 128, 1,
+        1, 1, 2432, 608, 32, 32, 288, 32, 32, 32, 608, 2432,
+        128, 2432, 608, 32, 32, 288, 32, 32, 32, 608, 2432, 128,
+        2432, 608, 32, 32, 32, 32, 8192, 64, 1600, 64, 64, 64,
+        2432, 9728, 256, 9728, 2432, 64, 64, 1600, 64, 64, 64, 2432,
+        9728, 256, 9728, 2432, 64, 64, 288, 32, 3, 12544, 4096, 64,
+        64, 64, 2432, 7296, 192, 5, 1, 1, 1, 1, 1, 1,
+        4, 4, 3, 2432, 2432, 64, 64, 4, 64, 64, 2432, 9728,
+        256, 9728, 2432, 64, 64, 64, 64, 25600, 100, 4900, 100, 100,
+        100, 6000, 24000, 400, 24000, 6000, 100, 100, 4900, 100, 100, 100,
+        6000, 24000, 400, 24000, 6000, 100, 100, 4900, 100, 100, 100, 6000,
+        24000, 400, 24000, 6000, 100, 100, 4900, 100, 100, 100, 6000, 24000,
+        400, 24000, 6000, 100, 100, 4900, 100, 100, 100, 6000, 24000, 400,
+        24000, 6000, 100, 100, 4900, 100, 100, 100, 6000, 24000, 400, 24000,
+        6000, 100, 100, 4900, 100, 100, 100, 6000, 24000, 400, 24000, 6000,
+        100, 100, 4900, 100, 100, 100, 6000, 24000, 400, 24000, 6000, 100,
+        100, 306, 34, 306, 34, 3, 100, 100, 6000, 18000, 300, 5,
+        4, 4, 3, 6000, 6000, 100, 100, 4, 100, 100, 6000, 24000,
+        400, 24000, 6000, 100, 100, 100, 100, 76800, 192, 15552, 192, 192,
+        192, 22080, 88320, 768, 88320, 22080, 192, 192, 15552, 192, 192, 192,
+        22080, 88320, 768, 88320, 22080, 192, 192, 432, 48, 432, 48, 432,
+        48, 3, 192, 192, 22080, 66240, 576, 5, 4, 4, 3, 22080,
+        22080, 192, 192, 4, 192, 192, 22080, 88320, 768, 88320, 22080, 192,
+        192, 2, 1, 1, 192, 192, 2, 22080, 58880, 512,
+    };
+    const size_t required_count = sizeof(required) / sizeof(required[0]);
+    if (n < required_count || n > (size - 8) / 4 || n > INT_MAX) return -1;
     w->n_tensors = (int)n;
     w->tensors = calloc(n, sizeof(*w->tensors));
     if (!w->tensors) return -1;
@@ -95,7 +123,8 @@ static int load_weights(const char* path, Weights* w, const char* license_key) {
         if (size-off < sizeof(bytes)) return -1;
         memcpy(&bytes, payload+off, sizeof(bytes));
         off += sizeof(bytes);
-        if (bytes > size-off || bytes % sizeof(float)) return -1;
+        if (bytes > size - off || bytes % sizeof(float) ||
+            (i < required_count && bytes / sizeof(float) < required[i])) return -1;
         w->tensors[i] = (float*)(payload+off);
         off += bytes;
     }
@@ -683,13 +712,11 @@ static void edgeface_forward(const float* input_chw, /* [3, 112, 112] */
      *          mlp_w2=14[128,19], mlp_w3=15[19,32], mlp_b3=16 */
     /* Test: INT8 for first block only, FP32 for rest */
     #define FP(i) (&weights->fp[i])
-    #define I8(i) (&weights->mm[i])  /* INT8 packed */
 
     /* TEST: first block INT8 to verify correctness */
     convnext_block(x, 28,28,32, W(17), W(4),W(5),3, W(6),W(7),
                    W(8),W(9),W(10), W(14),W(15),W(16), 19,128, work,
                    FP(8),FP(9),FP(14),FP(15));
-    /* Note: INT8 test disabled — need to change convnext_block to accept PackedMM* */
 
     convnext_block(x, 28,28,32, W(28), W(18),W(19),3, W(20),W(21),
                    W(22),W(23),W(24), W(25),W(26),W(27), 19,128, work,
